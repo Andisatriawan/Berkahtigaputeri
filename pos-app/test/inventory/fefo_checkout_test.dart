@@ -1,5 +1,6 @@
 // test/inventory/fefo_checkout_test.dart
 
+import 'package:berkahtigaputeri_pos/core/database/pos_database.dart';
 import 'package:berkahtigaputeri_pos/features/inventory/repositories/sqlite_inventory_repository.dart';
 import 'package:berkahtigaputeri_pos/features/pos/checkout/payment_service.dart';
 import 'package:berkahtigaputeri_pos/features/pos/checkout/sqlite_sale_repository.dart';
@@ -230,7 +231,7 @@ Future<void> _createExpiryProduct(
   );
 }
 
-Future<int> _count(dynamic database, String table) async {
+Future<int> _count(PosDatabase database, String table) async {
   final rows = await database.database.rawQuery(
     'SELECT COUNT(*) AS value FROM $table',
   );
