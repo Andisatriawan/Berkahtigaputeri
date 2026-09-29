@@ -486,7 +486,7 @@ class SqliteSaleRepository implements SaleRepository {
     );
     if (reservedQuantity != quantity) {
       throw ReservationCheckoutException(
-        'Jumlah reservasi untuk "\${product.nameId}" tidak cocok '
+        'Jumlah reservasi untuk "${product.nameId}" tidak cocok '
         'dengan checkout.',
       );
     }
