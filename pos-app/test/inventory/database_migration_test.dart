@@ -5,7 +5,6 @@ import 'dart:io';
 import 'package:berkahtigaputeri_pos/core/database/pos_database.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
-import 'package:sqflite/sqflite.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 void main() {
