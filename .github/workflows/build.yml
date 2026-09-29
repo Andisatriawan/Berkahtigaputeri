@@ -1,0 +1,53 @@
+name: vibe-build
+
+on: [push, pull_request]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: pos-app
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Prepare Android project
+        shell: bash
+        run: |
+          set -euo pipefail
+          CUSTOM_GRADLE=""
+          if [ -f android/app/build.gradle ]; then
+            CUSTOM_GRADLE="$RUNNER_TEMP/app-build.gradle"
+            cp android/app/build.gradle "$CUSTOM_GRADLE"
+          fi
+
+          rm -rf "$RUNNER_TEMP/berkahtigaputeri_android"
+          flutter create             --platforms=android             --org com.berkahtigaputeri             --project-name pos             "$RUNNER_TEMP/berkahtigaputeri_android"
+
+          rm -rf android
+          cp -R "$RUNNER_TEMP/berkahtigaputeri_android/android" android
+
+          if [ -n "$CUSTOM_GRADLE" ]; then
+            rm -f android/app/build.gradle.kts
+            cp "$CUSTOM_GRADLE" android/app/build.gradle
+          fi
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Analyze
+        run: flutter analyze
+
+      - name: Test
+        run: flutter test
+
+      - name: Build release app bundle
+        run: flutter build appbundle --release
