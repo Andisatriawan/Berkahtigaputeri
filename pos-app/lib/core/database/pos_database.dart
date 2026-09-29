@@ -9,7 +9,7 @@ import 'package:sqflite/sqflite.dart';
 class PosDatabase {
   PosDatabase._(this.database);
 
-  static const int schemaVersion = 1;
+  static const int schemaVersion = 2;
   static const String fileName = 'berkahtigaputeri_pos.db';
 
   final Database database;
@@ -32,6 +32,7 @@ class PosDatabase {
           await database.execute('PRAGMA foreign_keys = ON');
         },
         onCreate: _createSchema,
+        onUpgrade: _upgradeSchema,
       ),
     );
     return PosDatabase._(db);
@@ -57,26 +58,250 @@ class PosDatabase {
         name_id TEXT NOT NULL,
         price INTEGER NOT NULL CHECK(price >= 0),
         ppn_exempt INTEGER NOT NULL CHECK(ppn_exempt IN (0, 1)),
-        stock_qty INTEGER NOT NULL CHECK(stock_qty >= 0)
+        stock_qty INTEGER NOT NULL CHECK(stock_qty >= 0),
+        track_expiry INTEGER NOT NULL DEFAULT 0 CHECK(track_expiry IN (0, 1)),
+        min_shelf_life_days INTEGER NOT NULL DEFAULT 0 CHECK(min_shelf_life_days >= 0)
       )
     ''');
 
+    await _createInventorySchema(database);
+    await _createSalesAndAccountingSchema(database);
+  }
+
+  static Future<void> _upgradeSchema(
+    Database database,
+    int oldVersion,
+    int newVersion,
+  ) async {
+    var current = oldVersion;
+
+    if (current < 2) {
+      await _migrateV1ToV2(database);
+      current = 2;
+    }
+
+    if (current != newVersion) {
+      throw StateError(
+        'Unsupported database migration: $oldVersion -> $newVersion.',
+      );
+    }
+  }
+
+  static Future<void> _migrateV1ToV2(Database database) async {
+    await database.execute('''
+      ALTER TABLE products
+      ADD COLUMN track_expiry INTEGER NOT NULL DEFAULT 0
+      CHECK(track_expiry IN (0, 1))
+    ''');
+    await database.execute('''
+      ALTER TABLE products
+      ADD COLUMN min_shelf_life_days INTEGER NOT NULL DEFAULT 0
+      CHECK(min_shelf_life_days >= 0)
+    ''');
+
+    await database.execute(
+      'ALTER TABLE inventory_lots RENAME TO inventory_cost_layers_v1',
+    );
+    await database.execute('DROP INDEX IF EXISTS idx_inventory_lots_fifo');
+
+    await _createPhysicalLotTables(database);
+
+    await database.execute('''
+      INSERT INTO inventory_lots(
+        id,
+        product_id,
+        batch_no,
+        expiry_date,
+        first_received_at_utc,
+        on_hand_qty,
+        reserved_qty,
+        status
+      )
+      SELECT
+        id,
+        product_id,
+        id,
+        NULL,
+        acquired_at_utc,
+        remaining_qty,
+        0,
+        'saleable'
+      FROM inventory_cost_layers_v1
+    ''');
+
+    await _createCostLayerTable(database);
+
+    await database.execute('''
+      INSERT INTO inventory_cost_layers(
+        id,
+        product_id,
+        lot_id,
+        acquired_at_utc,
+        remaining_qty,
+        unit_cost
+      )
+      SELECT
+        id,
+        product_id,
+        id,
+        acquired_at_utc,
+        remaining_qty,
+        unit_cost
+      FROM inventory_cost_layers_v1
+    ''');
+
+    await database.execute('DROP TABLE inventory_cost_layers_v1');
+    await _createInventoryAuditTables(database);
+
+    await database.execute('''
+      INSERT INTO inventory_movements(
+        id,
+        product_id,
+        lot_id,
+        reference_id,
+        movement_type,
+        quantity_delta,
+        occurred_at_utc
+      )
+      SELECT
+        'migration:v2:' || id,
+        product_id,
+        id,
+        'schema-v2',
+        'opening_balance',
+        on_hand_qty,
+        first_received_at_utc
+      FROM inventory_lots
+      WHERE on_hand_qty > 0
+    ''');
+  }
+
+  static Future<void> _createInventorySchema(Database database) async {
+    await _createPhysicalLotTables(database);
+    await _createCostLayerTable(database);
+    await _createInventoryAuditTables(database);
+  }
+
+  static Future<void> _createPhysicalLotTables(Database database) async {
     await database.execute('''
       CREATE TABLE inventory_lots (
         id TEXT PRIMARY KEY,
         product_id TEXT NOT NULL,
-        acquired_at_utc TEXT NOT NULL,
-        remaining_qty INTEGER NOT NULL CHECK(remaining_qty >= 0),
-        unit_cost INTEGER NOT NULL CHECK(unit_cost >= 0),
+        batch_no TEXT NOT NULL,
+        expiry_date TEXT,
+        first_received_at_utc TEXT NOT NULL,
+        on_hand_qty INTEGER NOT NULL CHECK(on_hand_qty >= 0),
+        reserved_qty INTEGER NOT NULL DEFAULT 0 CHECK(reserved_qty >= 0),
+        status TEXT NOT NULL DEFAULT 'saleable'
+          CHECK(status IN ('saleable', 'quarantine', 'damaged', 'expired', 'recall')),
+        CHECK(reserved_qty <= on_hand_qty),
         FOREIGN KEY(product_id) REFERENCES products(id)
       )
     ''');
 
     await database.execute('''
-      CREATE INDEX idx_inventory_lots_fifo
-      ON inventory_lots(product_id, acquired_at_utc, id)
+      CREATE UNIQUE INDEX idx_inventory_lot_identity
+      ON inventory_lots(product_id, batch_no, IFNULL(expiry_date, ''))
     ''');
 
+    await database.execute('''
+      CREATE INDEX idx_inventory_lots_fefo
+      ON inventory_lots(
+        product_id,
+        status,
+        expiry_date,
+        first_received_at_utc,
+        id
+      )
+    ''');
+
+    await database.execute('''
+      CREATE TABLE lot_holds (
+        id TEXT PRIMARY KEY,
+        lot_id TEXT NOT NULL,
+        hold_type TEXT NOT NULL,
+        reason TEXT NOT NULL,
+        active INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0, 1)),
+        created_at_utc TEXT NOT NULL,
+        released_at_utc TEXT,
+        FOREIGN KEY(lot_id) REFERENCES inventory_lots(id)
+      )
+    ''');
+
+    await database.execute('''
+      CREATE INDEX idx_lot_holds_active
+      ON lot_holds(lot_id, active)
+    ''');
+  }
+
+  static Future<void> _createCostLayerTable(Database database) async {
+    await database.execute('''
+      CREATE TABLE inventory_cost_layers (
+        id TEXT PRIMARY KEY,
+        product_id TEXT NOT NULL,
+        lot_id TEXT NOT NULL,
+        acquired_at_utc TEXT NOT NULL,
+        remaining_qty INTEGER NOT NULL CHECK(remaining_qty >= 0),
+        unit_cost INTEGER NOT NULL CHECK(unit_cost >= 0),
+        FOREIGN KEY(product_id) REFERENCES products(id),
+        FOREIGN KEY(lot_id) REFERENCES inventory_lots(id)
+      )
+    ''');
+
+    await database.execute('''
+      CREATE INDEX idx_inventory_cost_layers_fifo
+      ON inventory_cost_layers(product_id, acquired_at_utc, id)
+    ''');
+  }
+
+  static Future<void> _createInventoryAuditTables(Database database) async {
+    await database.execute('''
+      CREATE TABLE inventory_movements (
+        id TEXT PRIMARY KEY,
+        product_id TEXT NOT NULL,
+        lot_id TEXT NOT NULL,
+        reference_id TEXT NOT NULL,
+        movement_type TEXT NOT NULL,
+        quantity_delta INTEGER NOT NULL,
+        occurred_at_utc TEXT NOT NULL,
+        FOREIGN KEY(product_id) REFERENCES products(id),
+        FOREIGN KEY(lot_id) REFERENCES inventory_lots(id)
+      )
+    ''');
+
+    await database.execute('''
+      CREATE INDEX idx_inventory_movements_product
+      ON inventory_movements(product_id, occurred_at_utc, id)
+    ''');
+
+    await database.execute('''
+      CREATE TABLE sale_lot_allocations (
+        sale_item_id TEXT NOT NULL,
+        allocation_no INTEGER NOT NULL,
+        lot_id TEXT NOT NULL,
+        quantity INTEGER NOT NULL CHECK(quantity > 0),
+        PRIMARY KEY(sale_item_id, allocation_no),
+        FOREIGN KEY(sale_item_id) REFERENCES sale_items(id),
+        FOREIGN KEY(lot_id) REFERENCES inventory_lots(id)
+      )
+    ''');
+
+    await database.execute('''
+      CREATE TABLE cost_layer_consumptions (
+        sale_item_id TEXT NOT NULL,
+        consumption_no INTEGER NOT NULL,
+        cost_layer_id TEXT NOT NULL,
+        quantity INTEGER NOT NULL CHECK(quantity > 0),
+        unit_cost INTEGER NOT NULL CHECK(unit_cost >= 0),
+        total_cost INTEGER NOT NULL CHECK(total_cost >= 0),
+        PRIMARY KEY(sale_item_id, consumption_no),
+        FOREIGN KEY(sale_item_id) REFERENCES sale_items(id),
+        FOREIGN KEY(cost_layer_id) REFERENCES inventory_cost_layers(id)
+      )
+    ''');
+  }
+
+  static Future<void> _createSalesAndAccountingSchema(Database database) async {
     await database.execute('''
       CREATE TABLE sales (
         id TEXT PRIMARY KEY,
