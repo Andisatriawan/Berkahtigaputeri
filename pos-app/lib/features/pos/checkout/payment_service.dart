@@ -2,9 +2,9 @@
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../accounting/models/coa_account.dart';
+import '../../../core/time/business_date.dart';
 import '../../accounting/models/journal_entry.dart';
-import '../../accounting/services/journal_service.dart';
+import '../cart/sale_calculator.dart';
 
 /// Payment methods supported by checkout.
 enum PaymentMethod {
@@ -24,216 +24,141 @@ extension PaymentMethodX on PaymentMethod {
         return 'Transfer Bank';
     }
   }
-
-  String get debitAccountCode {
-    switch (this) {
-      case PaymentMethod.cash:
-        return CoaAccounts.cash.code;
-      case PaymentMethod.qris:
-        return CoaAccounts.qris.code;
-      case PaymentMethod.transfer:
-        return CoaAccounts.bankTransfer.code;
-    }
-  }
 }
 
-/// Immutable payment input.
+/// One requested cart line.
 ///
-/// All monetary values use integer Rupiah.
-class PaymentRequest {
-  const PaymentRequest({
-    required this.transactionId,
-    required this.grossAmount,
-    required this.discountAmount,
-    required this.cogsAmount,
-    required this.method,
-    required this.occurredAt,
-    this.ppnExempt = false,
+/// Price and tax status are loaded from the persisted product master to avoid
+/// trusting mutable UI values during posting.
+class PaymentLineInput {
+  const PaymentLineInput({
+    required this.productId,
+    required this.quantity,
+    this.itemDiscountAmount = 0,
   });
 
+  final String productId;
+  final int quantity;
+  final int itemDiscountAmount;
+}
+
+/// Immutable checkout request.
+class PaymentRequest {
+  PaymentRequest({
+    required this.transactionId,
+    required this.method,
+    required this.occurredAtUtc,
+    required List<PaymentLineInput> lines,
+    this.transactionDiscountAmount = 0,
+    this.timezone = BusinessDate.timezoneId,
+  }) : lines = List<PaymentLineInput>.unmodifiable(lines);
+
   final String transactionId;
-  final int grossAmount;
-  final int discountAmount;
-  final int cogsAmount;
   final PaymentMethod method;
-  final DateTime occurredAt;
-  final bool ppnExempt;
-
-  int get dpp => grossAmount - discountAmount;
-
-  int get ppnAmount => ppnExempt ? 0 : PaymentService.calculatePpn(dpp);
-
-  int get grandTotal => dpp + ppnAmount;
+  final DateTime occurredAtUtc;
+  final List<PaymentLineInput> lines;
+  final int transactionDiscountAmount;
+  final String timezone;
 
   void validate() {
     if (transactionId.trim().isEmpty) {
       throw const PaymentValidationException('ID transaksi wajib diisi.');
     }
-    if (grossAmount < 0) {
+    if (lines.isEmpty) {
       throw const PaymentValidationException(
-        'Nilai penjualan tidak boleh negatif.',
+        'Keranjang tidak boleh kosong.',
       );
     }
-    if (discountAmount < 0) {
-      throw const PaymentValidationException('Diskon tidak boleh negatif.');
-    }
-    if (discountAmount > grossAmount) {
+    if (transactionDiscountAmount < 0) {
       throw const PaymentValidationException(
-        'Diskon tidak boleh melebihi nilai penjualan.',
+        'Diskon transaksi tidak boleh negatif.',
       );
     }
-    if (cogsAmount < 0) {
-      throw const PaymentValidationException('HPP tidak boleh negatif.');
+    if (timezone != BusinessDate.timezoneId) {
+      throw const PaymentValidationException(
+        'Zona waktu operasional harus Asia/Jakarta.',
+      );
+    }
+
+    for (final line in lines) {
+      if (line.productId.trim().isEmpty) {
+        throw const PaymentValidationException('ID produk wajib diisi.');
+      }
+      if (line.quantity <= 0) {
+        throw const PaymentValidationException(
+          'Jumlah produk harus lebih dari nol.',
+        );
+      }
+      if (line.itemDiscountAmount < 0) {
+        throw const PaymentValidationException(
+          'Diskon item tidak boleh negatif.',
+        );
+      }
     }
   }
 }
 
-/// Result returned after a payment has been posted to the accounting journal.
+/// Persisted result of one checkout.
 class PaymentResult {
   const PaymentResult({
+    required this.saleId,
     required this.journalEntry,
-    required this.dpp,
+    required this.grossAmount,
+    required this.discountAmount,
+    required this.taxableDpp,
+    required this.exemptDpp,
     required this.ppnAmount,
     required this.grandTotal,
+    required this.cogsAmount,
+    required this.businessDate,
     required this.alreadyProcessed,
   });
 
+  final String saleId;
   final JournalEntry journalEntry;
-  final int dpp;
+  final int grossAmount;
+  final int discountAmount;
+  final int taxableDpp;
+  final int exemptDpp;
   final int ppnAmount;
   final int grandTotal;
+  final int cogsAmount;
+  final String businessDate;
   final bool alreadyProcessed;
+
+  int get dpp => taxableDpp + exemptDpp;
 }
 
-/// Creates POS payment journals using the M1 JournalService.
+/// Atomic sale persistence boundary.
 ///
-/// Account codes are sourced only from the approved COA model. JournalService
-/// is the single posting boundary, so an unbalanced journal never mutates
-/// accounting state and transactionId remains idempotent.
+/// Implementations must persist the sale, stock movement, journal, and outbox
+/// event in one database transaction.
+abstract class SaleRepository {
+  Future<PaymentResult> processPayment(PaymentRequest request);
+}
+
+/// Checkout application service.
 class PaymentService {
   const PaymentService({
-    required JournalService journalService,
-  }) : _journalService = journalService;
+    required SaleRepository repository,
+  }) : _repository = repository;
 
-  static const int ppnRatePercent = 11;
+  final SaleRepository _repository;
 
-  final JournalService _journalService;
-
-  /// Calculates 11% PPN using integer Rupiah and half-up rounding.
-  static int calculatePpn(int dpp) {
-    if (dpp < 0) {
-      throw const PaymentValidationException(
-        'Dasar pengenaan PPN tidak boleh negatif.',
-      );
-    }
-    return ((dpp * ppnRatePercent) + 50) ~/ 100;
-  }
-
-  PaymentResult process(PaymentRequest request) {
+  Future<PaymentResult> process(PaymentRequest request) {
     request.validate();
-
-    final transactionId = request.transactionId.trim();
-    final existing = _journalService.findByTransactionId(transactionId);
-    final entry = _buildEntry(
-      request: request,
-      transactionId: transactionId,
-    );
-
-    final posted = _journalService.post(entry);
-
-    return PaymentResult(
-      journalEntry: posted,
-      dpp: request.dpp,
-      ppnAmount: request.ppnAmount,
-      grandTotal: request.grandTotal,
-      alreadyProcessed: existing != null,
-    );
+    return _repository.processPayment(request);
   }
 
-  JournalEntry _buildEntry({
-    required PaymentRequest request,
-    required String transactionId,
-  }) {
-    final lines = <JournalLine>[];
-
-    if (request.grandTotal > 0) {
-      lines.add(
-        JournalLine(
-          accountCode: request.method.debitAccountCode,
-          debit: request.grandTotal,
-          credit: 0,
-        ),
-      );
-    }
-
-    if (request.dpp > 0) {
-      lines.add(
-        JournalLine(
-          accountCode: CoaAccounts.sales.code,
-          debit: 0,
-          credit: request.dpp,
-        ),
-      );
-    }
-
-    if (request.ppnAmount > 0) {
-      lines.add(
-        JournalLine(
-          accountCode: CoaAccounts.ppnPayable.code,
-          debit: 0,
-          credit: request.ppnAmount,
-        ),
-      );
-    }
-
-    if (request.cogsAmount > 0) {
-      lines
-        ..add(
-          JournalLine(
-            accountCode: CoaAccounts.cogs.code,
-            debit: request.cogsAmount,
-            credit: 0,
-          ),
-        )
-        ..add(
-          JournalLine(
-            accountCode: CoaAccounts.inventory.code,
-            debit: 0,
-            credit: request.cogsAmount,
-          ),
-        );
-    }
-
-    if (lines.isEmpty) {
-      throw const PaymentValidationException(
-        'Transaksi tidak menghasilkan jurnal.',
-      );
-    }
-
-    return JournalEntry(
-      id: _journalId(request, transactionId),
-      date: request.occurredAt.toUtc(),
-      transactionId: transactionId,
-      lines: lines,
-    );
-  }
-
-  String _journalId(PaymentRequest request, String transactionId) {
-    return 'payment:$transactionId:'
-        '${request.grossAmount}:'
-        '${request.discountAmount}:'
-        '${request.cogsAmount}:'
-        '${request.method.name}:'
-        '${request.ppnExempt ? 1 : 0}';
+  static int calculatePpn(int taxableDpp) {
+    return SaleCalculator.calculatePpn(taxableDpp);
   }
 }
 
-/// Riverpod provider that reuses the M1 journal service.
-final Provider<PaymentService> paymentServiceProvider =
-    Provider<PaymentService>(
-  (ref) => PaymentService(
-    journalService: ref.read(journalServiceProvider.notifier),
-  ),
+/// Riverpod wiring keeps state management outside the domain logic.
+final paymentServiceProvider =
+    Provider.family<PaymentService, SaleRepository>(
+  (ref, repository) => PaymentService(repository: repository),
 );
 
 class PaymentServiceException implements Exception {

@@ -1,5 +1,7 @@
 // lib/features/accounting/models/journal_entry.dart
 
+import '../../../core/time/business_date.dart';
+
 /// One debit or credit line in a journal entry.
 ///
 /// Amounts are stored as integer Rupiah.
@@ -26,31 +28,34 @@ class JournalLine {
 }
 
 /// Immutable double-entry accounting journal.
+///
+/// [date] is always treated as the UTC occurrence instant. [businessDate]
+/// preserves the Indonesian operating date for reports.
 class JournalEntry {
   JournalEntry({
     required this.id,
     required this.date,
     required this.transactionId,
     required List<JournalLine> lines,
-  }) : lines = List<JournalLine>.unmodifiable(lines);
+    String? businessDate,
+    this.timezone = BusinessDate.timezoneId,
+  })  : businessDate =
+            businessDate ?? BusinessDate.fromUtc(date.toUtc()),
+        lines = List<JournalLine>.unmodifiable(lines);
 
   final String id;
   final DateTime date;
   final String transactionId;
+  final String businessDate;
+  final String timezone;
   final List<JournalLine> lines;
 
   int get totalDebit {
-    return lines.fold<int>(
-      0,
-      (sum, line) => sum + line.debit,
-    );
+    return lines.fold<int>(0, (sum, line) => sum + line.debit);
   }
 
   int get totalCredit {
-    return lines.fold<int>(
-      0,
-      (sum, line) => sum + line.credit,
-    );
+    return lines.fold<int>(0, (sum, line) => sum + line.credit);
   }
 
   bool get isBalanced => totalDebit == totalCredit;
@@ -59,6 +64,8 @@ class JournalEntry {
     if (id != other.id ||
         date.toUtc() != other.date.toUtc() ||
         transactionId != other.transactionId ||
+        businessDate != other.businessDate ||
+        timezone != other.timezone ||
         lines.length != other.lines.length) {
       return false;
     }

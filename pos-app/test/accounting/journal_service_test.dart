@@ -1,16 +1,25 @@
 // test/accounting/journal_service_test.dart
 
 import 'package:berkahtigaputeri_pos/features/accounting/models/journal_entry.dart';
+import 'package:berkahtigaputeri_pos/features/accounting/repositories/sqlite_journal_repository.dart';
 import 'package:berkahtigaputeri_pos/features/accounting/services/journal_service.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/test_database.dart';
+
 void main() {
   group('JournalService', () {
-    test('memposting jurnal seimbang', () {
-      final service = JournalService();
+    test('memposting dan membaca kembali jurnal seimbang', () async {
+      final database = await openTestDatabase();
+      addTearDown(database.close);
+
+      final service = JournalService(
+        SqliteJournalRepository(database),
+      );
+
       final entry = JournalEntry(
         id: 'J-001',
-        date: DateTime.utc(2026, 9, 29),
+        date: DateTime.utc(2026, 9, 29, 10),
         transactionId: 'TRX-001',
         lines: const <JournalLine>[
           JournalLine(accountCode: '1-1010', debit: 111000, credit: 0),
@@ -21,15 +30,25 @@ void main() {
         ],
       );
 
-      final posted = service.post(entry);
+      final posted = await service.post(entry);
+      final stored = await service.findByTransactionId('TRX-001');
 
       expect(posted.totalDebit, 171000);
       expect(posted.totalCredit, 171000);
-      expect(service.state, hasLength(1));
+      expect(posted.isBalanced, isTrue);
+      expect(stored, isNotNull);
+      expect(stored!.sameAs(posted), isTrue);
+      expect(await service.listAll(), hasLength(1));
     });
 
-    test('menolak jurnal tidak seimbang tanpa mengubah state', () {
-      final service = JournalService();
+    test('menolak jurnal tidak seimbang dan tidak menyimpan apa pun', () async {
+      final database = await openTestDatabase();
+      addTearDown(database.close);
+
+      final service = JournalService(
+        SqliteJournalRepository(database),
+      );
+
       final entry = JournalEntry(
         id: 'J-002',
         date: DateTime.utc(2026, 9, 29),
@@ -44,11 +63,17 @@ void main() {
         () => service.post(entry),
         throwsA(isA<UnbalancedJournalException>()),
       );
-      expect(service.state, isEmpty);
+      expect(await service.listAll(), isEmpty);
     });
 
-    test('posting identik dengan transactionId sama bersifat idempoten', () {
-      final service = JournalService();
+    test('transactionId identik tetap idempoten di repository', () async {
+      final database = await openTestDatabase();
+      addTearDown(database.close);
+
+      final firstService = JournalService(
+        SqliteJournalRepository(database),
+      );
+
       final entry = JournalEntry(
         id: 'J-003',
         date: DateTime.utc(2026, 9, 29),
@@ -60,15 +85,25 @@ void main() {
         ],
       );
 
-      final first = service.post(entry);
-      final second = service.post(entry);
+      final first = await firstService.post(entry);
 
-      expect(identical(first, second), isTrue);
-      expect(service.state, hasLength(1));
+      final restartedService = JournalService(
+        SqliteJournalRepository(database),
+      );
+      final second = await restartedService.post(entry);
+
+      expect(second.sameAs(first), isTrue);
+      expect(await restartedService.listAll(), hasLength(1));
     });
 
-    test('menolak transactionId sama dengan isi berbeda', () {
-      final service = JournalService();
+    test('transactionId sama dengan isi berbeda ditolak', () async {
+      final database = await openTestDatabase();
+      addTearDown(database.close);
+
+      final service = JournalService(
+        SqliteJournalRepository(database),
+      );
+
       final first = JournalEntry(
         id: 'J-004',
         date: DateTime.utc(2026, 9, 29),
@@ -79,6 +114,7 @@ void main() {
           JournalLine(accountCode: '2-2010', debit: 0, credit: 11000),
         ],
       );
+
       final conflicting = JournalEntry(
         id: 'J-005',
         date: DateTime.utc(2026, 9, 29),
@@ -90,32 +126,61 @@ void main() {
         ],
       );
 
-      service.post(first);
+      await service.post(first);
 
-      expect(
-        () => service.post(conflicting),
+      await expectLater(
+        service.post(conflicting),
         throwsA(isA<DuplicateTransactionIdException>()),
       );
-      expect(service.state, hasLength(1));
+      expect(await service.listAll(), hasLength(1));
     });
 
-    test('PPN 11 persen hanya boleh kredit ke 2-2010', () {
-      final service = JournalService();
-      final entry = JournalEntry(
-        id: 'J-006',
-        date: DateTime.utc(2026, 9, 29),
-        transactionId: 'TRX-006',
+    test('generic journal mengizinkan reversal debit ke 2-2010', () async {
+      final database = await openTestDatabase();
+      addTearDown(database.close);
+
+      final service = JournalService(
+        SqliteJournalRepository(database),
+      );
+
+      final reversal = JournalEntry(
+        id: 'J-REV-001',
+        date: DateTime.utc(2026, 9, 29, 15),
+        transactionId: 'REV-001',
         lines: const <JournalLine>[
           JournalLine(accountCode: '2-2010', debit: 11000, credit: 0),
           JournalLine(accountCode: '1-1010', debit: 0, credit: 11000),
         ],
       );
 
-      expect(
-        () => service.post(entry),
-        throwsA(isA<PpnPostingException>()),
+      final posted = await service.post(reversal);
+
+      expect(posted.isBalanced, isTrue);
+      expect(await service.listAll(), hasLength(1));
+    });
+
+    test('businessDate mengikuti WIB dan bukan tanggal UTC', () async {
+      final database = await openTestDatabase();
+      addTearDown(database.close);
+
+      final service = JournalService(
+        SqliteJournalRepository(database),
       );
-      expect(service.state, isEmpty);
+
+      final entry = JournalEntry(
+        id: 'J-DATE-001',
+        date: DateTime.utc(2026, 9, 29, 17, 30),
+        transactionId: 'TRX-DATE-001',
+        lines: const <JournalLine>[
+          JournalLine(accountCode: '1-1010', debit: 1000, credit: 0),
+          JournalLine(accountCode: '4-4010', debit: 0, credit: 1000),
+        ],
+      );
+
+      final posted = await service.post(entry);
+
+      expect(posted.businessDate, '2026-09-30');
+      expect(posted.timezone, 'Asia/Jakarta');
     });
   });
 }

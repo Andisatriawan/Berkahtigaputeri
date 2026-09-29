@@ -4,54 +4,48 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/coa_account.dart';
 import '../models/journal_entry.dart';
+import '../repositories/journal_repository.dart';
 
-/// Stores posted journals in memory for the current application session.
+/// Validates and persists append-only double-entry journals.
 ///
-/// A persistent repository can later wrap this service without changing the
-/// posting invariants enforced here.
-class JournalService extends StateNotifier<List<JournalEntry>> {
-  JournalService() : super(const <JournalEntry>[]);
+/// Ordinary sales rules such as "PPN must be credited" belong to the sale
+/// posting policy. This generic service also permits balanced reversal entries,
+/// including a debit to 2-2010 when a sale is returned or corrected.
+class JournalService {
+  const JournalService(this._repository);
 
-  static const String ppnPayableAccountCode = '2-2010';
+  final JournalRepository _repository;
 
-  /// Posts a balanced journal exactly once per transactionId.
-  ///
-  /// Reposting an identical entry is idempotent and returns the previously
-  /// posted entry. Reusing the same transactionId with different content is
-  /// rejected.
-  JournalEntry post(JournalEntry entry) {
-    _validate(entry);
+  Future<JournalEntry> post(JournalEntry entry) {
+    final normalized = _normalize(entry);
+    validate(normalized);
 
-    final normalizedTransactionId = entry.transactionId.trim();
-    final existing = _findByTransactionId(normalizedTransactionId);
+    return _repository.transaction<JournalEntry>((repository) async {
+      final existing = await repository.findByTransactionId(
+        normalized.transactionId,
+      );
 
-    if (existing != null) {
-      if (_sameTransaction(existing, entry, normalizedTransactionId)) {
-        return existing;
+      if (existing != null) {
+        if (existing.sameAs(normalized)) {
+          return existing;
+        }
+        throw DuplicateTransactionIdException(
+          normalized.transactionId,
+        );
       }
-      throw DuplicateTransactionIdException(normalizedTransactionId);
-    }
 
-    final normalizedEntry = JournalEntry(
-      id: entry.id.trim(),
-      date: entry.date.toUtc(),
-      transactionId: normalizedTransactionId,
-      lines: entry.lines,
-    );
-
-    // State changes only after all validation passes.
-    state = List<JournalEntry>.unmodifiable(
-      <JournalEntry>[...state, normalizedEntry],
-    );
-
-    return normalizedEntry;
+      return repository.insert(normalized);
+    });
   }
 
-  JournalEntry? findByTransactionId(String transactionId) {
-    return _findByTransactionId(transactionId.trim());
+  Future<JournalEntry?> findByTransactionId(String transactionId) {
+    return _repository.findByTransactionId(transactionId.trim());
   }
 
-  void _validate(JournalEntry entry) {
+  Future<List<JournalEntry>> listAll() => _repository.listAll();
+
+  /// Validates accounting invariants without performing persistence.
+  void validate(JournalEntry entry) {
     if (entry.id.trim().isEmpty) {
       throw const JournalValidationException('ID jurnal wajib diisi.');
     }
@@ -104,44 +98,25 @@ class JournalService extends StateNotifier<List<JournalEntry>> {
         'Satu baris jurnal tidak boleh memiliki debit dan kredit sekaligus.',
       );
     }
-
-    if (line.accountCode == ppnPayableAccountCode &&
-        !(line.credit > 0 && line.debit == 0)) {
-      throw const PpnPostingException(
-        'PPN 11% wajib dikreditkan ke akun 2-2010.',
-      );
-    }
   }
 
-  JournalEntry? _findByTransactionId(String transactionId) {
-    for (final entry in state) {
-      if (entry.transactionId == transactionId) {
-        return entry;
-      }
-    }
-    return null;
-  }
-
-  bool _sameTransaction(
-    JournalEntry existing,
-    JournalEntry candidate,
-    String normalizedTransactionId,
-  ) {
-    final normalizedCandidate = JournalEntry(
-      id: candidate.id.trim(),
-      date: candidate.date.toUtc(),
-      transactionId: normalizedTransactionId,
-      lines: candidate.lines,
+  JournalEntry _normalize(JournalEntry entry) {
+    return JournalEntry(
+      id: entry.id.trim(),
+      date: entry.date.toUtc(),
+      transactionId: entry.transactionId.trim(),
+      businessDate: entry.businessDate,
+      timezone: entry.timezone,
+      lines: entry.lines,
     );
-    return existing.sameAs(normalizedCandidate);
   }
 }
 
-/// Riverpod state for all journals posted during the current session.
-final StateNotifierProvider<JournalService, List<JournalEntry>>
+/// Riverpod wiring stays outside the accounting domain.
+final ProviderFamily<JournalService, JournalRepository>
     journalServiceProvider =
-    StateNotifierProvider<JournalService, List<JournalEntry>>(
-  (ref) => JournalService(),
+    Provider.family<JournalService, JournalRepository>(
+  (ref, repository) => JournalService(repository),
 );
 
 class JournalServiceException implements Exception {
@@ -157,14 +132,10 @@ class JournalValidationException extends JournalServiceException {
   const JournalValidationException(super.message);
 }
 
-class PpnPostingException extends JournalServiceException {
-  const PpnPostingException(super.message);
-}
-
 class UnknownAccountCodeException extends JournalServiceException {
   UnknownAccountCodeException(String accountCode)
       : super(
-          'Kode akun "$accountCode" tidak terdaftar pada COA M1.',
+          'Kode akun "$accountCode" tidak terdaftar pada COA.',
         );
 }
 
