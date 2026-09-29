@@ -42,6 +42,12 @@ Temporary operational blocks such as recall or quality quarantine. Any active ho
 
 Immutable physical quantity audit. Receipt and sale movements identify the actual physical lot.
 
+### `inventory_reservations` / `inventory_reservation_lines`
+
+Pre-payment FEFO reservations increase `reserved_qty` without changing physical `on_hand_qty`. Reservations are idempotent by transaction ID, have an explicit expiry timestamp, can be released/expired, and are consumed atomically by checkout when `PaymentRequest.reservationId` is supplied.
+
+Checkout revalidates the reserved lot's saleable status, active holds, expiry, and minimum shelf-life policy before dispensing it. A failed checkout rolls back the reservation consumption.
+
 ### `sale_lot_allocations`
 
 Permanent trace from each sale item to the physical batch(es) actually dispensed.
