@@ -43,11 +43,9 @@ extension PaymentMethodX on PaymentMethod {
   }
 }
 
-/// Account codes explicitly supplied for the POS payment posting.
+/// Account codes explicitly supplied for POS payment posting.
 ///
-/// These constants must remain synchronized with docs/COA.md once the
-/// repository accounting core is populated. No additional account code is
-/// inferred by this service.
+/// No account code is inferred by this service.
 abstract final class PaymentAccountCodes {
   static const String cash = '1-1010';
   static const String qris = '1-1020';
@@ -60,8 +58,7 @@ abstract final class PaymentAccountCodes {
 
 /// Immutable checkout input.
 ///
-/// Monetary values are stored as whole rupiah to avoid floating-point
-/// rounding errors in accounting calculations.
+/// Monetary values use whole rupiah to avoid floating-point accounting errors.
 class PaymentRequest {
   const PaymentRequest({
     required this.transactionId,
@@ -87,9 +84,7 @@ class PaymentRequest {
 
   void validate() {
     if (transactionId.trim().isEmpty) {
-      throw const PaymentValidationException(
-        'ID transaksi wajib diisi.',
-      );
+      throw const PaymentValidationException('ID transaksi wajib diisi.');
     }
     if (grossAmount < 0) {
       throw const PaymentValidationException(
@@ -97,9 +92,7 @@ class PaymentRequest {
       );
     }
     if (discountAmount < 0) {
-      throw const PaymentValidationException(
-        'Diskon tidak boleh negatif.',
-      );
+      throw const PaymentValidationException('Diskon tidak boleh negatif.');
     }
     if (discountAmount > grossAmount) {
       throw const PaymentValidationException(
@@ -107,9 +100,7 @@ class PaymentRequest {
       );
     }
     if (cogsAmount < 0) {
-      throw const PaymentValidationException(
-        'HPP tidak boleh negatif.',
-      );
+      throw const PaymentValidationException('HPP tidak boleh negatif.');
     }
   }
 }
@@ -154,7 +145,7 @@ class PaymentJournalLine {
   }
 }
 
-/// Complete balanced posting for a POS payment.
+/// Complete balanced posting for one POS payment.
 class PaymentPosting {
   PaymentPosting({
     required this.transactionId,
@@ -196,18 +187,21 @@ class PaymentPosting {
         ppnAmount == request.ppnAmount &&
         cogsAmount == request.cogsAmount &&
         amountDue == request.amountDue &&
-        method == request.method;
+        method == request.method &&
+        occurredAt == request.occurredAt.toUtc();
   }
 
   void validateBalanced() {
-    for (final line in lines) {
-      line.validate();
-    }
     if (lines.isEmpty) {
       throw const PaymentValidationException(
         'Jurnal pembayaran tidak boleh kosong.',
       );
     }
+
+    for (final line in lines) {
+      line.validate();
+    }
+
     if (!isBalanced) {
       throw UnbalancedJournalException(
         totalDebit: totalDebit,
@@ -228,11 +222,22 @@ class PaymentResult {
   final bool alreadyProcessed;
 }
 
+/// Result of an atomic idempotent insert.
+class PaymentInsertResult {
+  const PaymentInsertResult({
+    required this.posting,
+    required this.inserted,
+  });
+
+  final PaymentPosting posting;
+  final bool inserted;
+}
+
 /// Atomic persistence boundary used by the payment service.
 ///
-/// Implementations must execute [operation] in one database transaction.
-/// Any exception thrown by [operation] must roll back all writes. The
-/// persistence layer must also enforce a unique constraint on transaction_id.
+/// Implementations must execute the operation inside one database transaction.
+/// Any exception thrown by the operation must roll back every write performed
+/// inside the transaction.
 abstract interface class PaymentTransactionStore {
   Future<T> runTransaction<T>(
     Future<T> Function(PaymentTransactionSession session) operation,
@@ -240,10 +245,14 @@ abstract interface class PaymentTransactionStore {
 }
 
 /// Persistence operations available inside one atomic payment transaction.
+///
+/// The backing store must enforce transaction_id as unique. insertIfAbsent
+/// must atomically insert the posting, or return the already committed posting
+/// for the same transaction_id when another writer wins the race.
 abstract interface class PaymentTransactionSession {
   Future<PaymentPosting?> findByTransactionId(String transactionId);
 
-  Future<void> insert(PaymentPosting posting);
+  Future<PaymentInsertResult> insertIfAbsent(PaymentPosting posting);
 }
 
 /// Creates balanced POS accounting entries and persists them atomically.
@@ -258,14 +267,14 @@ class PaymentService {
 
   /// Calculates 11% PPN from the amount after discount.
   ///
-  /// The result is rounded to the nearest whole rupiah using integer
-  /// arithmetic, with .50 rounded upward.
+  /// The result is rounded to the nearest whole rupiah with .50 rounded up.
   static int calculatePpn(int amountAfterDiscount) {
     if (amountAfterDiscount < 0) {
       throw const PaymentValidationException(
         'Dasar pengenaan PPN tidak boleh negatif.',
       );
     }
+
     return ((amountAfterDiscount * ppnRatePercent) + 50) ~/ 100;
   }
 
@@ -295,14 +304,22 @@ class PaymentService {
         normalizedTransactionId: normalizedId,
       );
 
-      // Balance is checked before persistence. If insertion fails or any
-      // subsequent operation throws, runTransaction must roll everything back.
+      // Never persist an unbalanced accounting posting.
       posting.validateBalanced();
-      await session.insert(posting);
+
+      final insertResult = await session.insertIfAbsent(posting);
+      final committedPosting = insertResult.posting;
+
+      committedPosting.validateBalanced();
+
+      if (!committedPosting.matches(request)) {
+        // Throwing here forces runTransaction to roll back this operation.
+        throw TransactionIdConflictException(normalizedId);
+      }
 
       return PaymentResult(
-        posting: posting,
-        alreadyProcessed: false,
+        posting: committedPosting,
+        alreadyProcessed: !insertResult.inserted,
       );
     });
   }
