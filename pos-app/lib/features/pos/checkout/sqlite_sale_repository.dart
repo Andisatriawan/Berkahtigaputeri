@@ -6,6 +6,7 @@ import 'package:sqflite/sqflite.dart';
 
 import '../../../core/database/pos_database.dart';
 import '../../../core/time/business_date.dart';
+import '../../accounting/exceptions/accounting_exceptions.dart';
 import '../../accounting/models/coa_account.dart';
 import '../../accounting/models/journal_entry.dart';
 import '../../accounting/repositories/sqlite_journal_repository.dart';

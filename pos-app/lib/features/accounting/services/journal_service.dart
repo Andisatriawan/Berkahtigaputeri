@@ -1,10 +1,10 @@
 // lib/features/accounting/services/journal_service.dart
 
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-
+import '../exceptions/accounting_exceptions.dart';
 import '../models/coa_account.dart';
 import '../models/journal_entry.dart';
 import '../repositories/journal_repository.dart';
+
 
 /// Validates and persists append-only double-entry journals.
 ///
@@ -110,50 +110,4 @@ class JournalService {
       lines: entry.lines,
     );
   }
-}
-
-/// Riverpod wiring stays outside the accounting domain.
-final ProviderFamily<JournalService, JournalRepository>
-    journalServiceProvider =
-    Provider.family<JournalService, JournalRepository>(
-  (ref, repository) => JournalService(repository),
-);
-
-class JournalServiceException implements Exception {
-  const JournalServiceException(this.message);
-
-  final String message;
-
-  @override
-  String toString() => message;
-}
-
-class JournalValidationException extends JournalServiceException {
-  const JournalValidationException(super.message);
-}
-
-class UnknownAccountCodeException extends JournalServiceException {
-  UnknownAccountCodeException(String accountCode)
-      : super(
-          'Kode akun "$accountCode" tidak terdaftar pada COA.',
-        );
-}
-
-class DuplicateTransactionIdException extends JournalServiceException {
-  DuplicateTransactionIdException(String transactionId)
-      : super(
-          'ID transaksi "$transactionId" sudah digunakan oleh jurnal lain.',
-        );
-}
-
-class UnbalancedJournalException extends JournalServiceException {
-  UnbalancedJournalException({
-    required this.totalDebit,
-    required this.totalCredit,
-  }) : super(
-          'Jurnal tidak seimbang: debit Rp$totalDebit, kredit Rp$totalCredit.',
-        );
-
-  final int totalDebit;
-  final int totalCredit;
 }

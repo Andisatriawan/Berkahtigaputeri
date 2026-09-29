@@ -1,7 +1,5 @@
 // lib/features/pos/checkout/payment_service.dart
 
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-
 import '../../../core/time/business_date.dart';
 import '../../accounting/models/journal_entry.dart';
 import '../cart/sale_calculator.dart';
@@ -154,12 +152,6 @@ class PaymentService {
     return SaleCalculator.calculatePpn(taxableDpp);
   }
 }
-
-/// Riverpod wiring keeps state management outside the domain logic.
-final paymentServiceProvider =
-    Provider.family<PaymentService, SaleRepository>(
-  (ref, repository) => PaymentService(repository: repository),
-);
 
 class PaymentServiceException implements Exception {
   const PaymentServiceException(this.message);

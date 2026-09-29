@@ -1,5 +1,6 @@
 // test/accounting/journal_service_test.dart
 
+import 'package:berkahtigaputeri_pos/features/accounting/exceptions/accounting_exceptions.dart';
 import 'package:berkahtigaputeri_pos/features/accounting/models/journal_entry.dart';
 import 'package:berkahtigaputeri_pos/features/accounting/repositories/sqlite_journal_repository.dart';
 import 'package:berkahtigaputeri_pos/features/accounting/services/journal_service.dart';

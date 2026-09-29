@@ -3,8 +3,8 @@
 import 'package:sqflite/sqflite.dart';
 
 import '../../../core/database/pos_database.dart';
+import '../exceptions/accounting_exceptions.dart';
 import '../models/journal_entry.dart';
-import '../services/journal_service.dart';
 import 'journal_repository.dart';
 
 /// SQLite implementation of [JournalRepository].
