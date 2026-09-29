@@ -232,6 +232,45 @@ class PosDatabase {
       CREATE INDEX idx_lot_holds_active
       ON lot_holds(lot_id, active)
     ''');
+
+    await database.execute('''
+      CREATE TABLE inventory_reservations (
+        id TEXT PRIMARY KEY,
+        transaction_id TEXT NOT NULL UNIQUE,
+        request_fingerprint TEXT NOT NULL,
+        status TEXT NOT NULL
+          CHECK(status IN ('active', 'committed', 'released', 'expired')),
+        expires_at_utc TEXT NOT NULL,
+        created_at_utc TEXT NOT NULL,
+        committed_at_utc TEXT,
+        released_at_utc TEXT
+      )
+    ''');
+
+    await database.execute('''
+      CREATE INDEX idx_inventory_reservations_status_expiry
+      ON inventory_reservations(status, expires_at_utc)
+    ''');
+
+    await database.execute('''
+      CREATE TABLE inventory_reservation_lines (
+        reservation_id TEXT NOT NULL,
+        line_no INTEGER NOT NULL,
+        allocation_no INTEGER NOT NULL,
+        product_id TEXT NOT NULL,
+        lot_id TEXT NOT NULL,
+        quantity INTEGER NOT NULL CHECK(quantity > 0),
+        PRIMARY KEY(reservation_id, line_no, allocation_no),
+        FOREIGN KEY(reservation_id) REFERENCES inventory_reservations(id),
+        FOREIGN KEY(product_id) REFERENCES products(id),
+        FOREIGN KEY(lot_id) REFERENCES inventory_lots(id)
+      )
+    ''');
+
+    await database.execute('''
+      CREATE INDEX idx_inventory_reservation_lines_lot
+      ON inventory_reservation_lines(lot_id, reservation_id)
+    ''');
   }
 
   static Future<void> _createCostLayerTable(Database database) async {
