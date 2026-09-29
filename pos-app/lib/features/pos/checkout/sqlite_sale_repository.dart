@@ -11,12 +11,17 @@ import '../../accounting/models/coa_account.dart';
 import '../../accounting/models/journal_entry.dart';
 import '../../accounting/repositories/sqlite_journal_repository.dart';
 import '../../accounting/services/journal_service.dart';
+import '../../inventory/services/fefo_engine.dart';
+import '../../inventory/services/fifo_cost_engine.dart';
 import '../../products/models/product.dart';
 import '../../products/repositories/sqlite_product_repository.dart';
 import '../cart/sale_calculator.dart';
 import 'payment_service.dart';
 
 /// SQLite implementation of the atomic POS sale boundary.
+///
+/// Physical batches are allocated with FEFO. Financial valuation remains FIFO
+/// to preserve the locked COA contract for 1-1040 / 5-5010.
 class SqliteSaleRepository implements SaleRepository {
   const SqliteSaleRepository(this._database);
 
@@ -97,6 +102,13 @@ class SqliteSaleRepository implements SaleRepository {
         transactionDiscountAmount: request.transactionDiscountAmount,
       );
 
+      final businessDate =
+          BusinessDate.fromUtc(request.occurredAtUtc.toUtc());
+      final businessDateValue = DateTime.parse(businessDate);
+      final occurredAtUtc = request.occurredAtUtc.toUtc();
+
+      final physicalAllocationsByLine = <List<FefoAllocation>>[];
+      final costResultsByLine = <FifoCostResult>[];
       final cogsByLine = <int>[];
       var totalCogs = 0;
 
@@ -114,21 +126,47 @@ class SqliteSaleRepository implements SaleRepository {
           );
         }
 
-        final cogs = await _consumeFifo(
+        final physicalAllocations = await _consumeFefo(
           transaction: transaction,
           transactionId: transactionId,
           lineIndex: lineIndex,
           product: product,
           quantity: requestedQuantity,
-          occurredAtUtc: request.occurredAtUtc.toUtc(),
+          businessDate: businessDateValue,
+          occurredAtUtc: occurredAtUtc,
         );
 
-        cogsByLine.add(cogs);
-        totalCogs += cogs;
+        final costResult = await _consumeFifoCost(
+          transaction: transaction,
+          transactionId: transactionId,
+          lineIndex: lineIndex,
+          product: product,
+          quantity: requestedQuantity,
+          occurredAtUtc: occurredAtUtc,
+        );
+
+        if (physicalAllocations.fold<int>(
+              0,
+              (sum, allocation) => sum + allocation.quantity,
+            ) !=
+            costResult.quantity) {
+          throw InventoryDataIntegrityException(
+            'Kuantitas FEFO dan FIFO tidak sama untuk "${product.nameId}".',
+          );
+        }
+
+        await _decrementProductStock(
+          transaction: transaction,
+          product: product,
+          quantity: requestedQuantity,
+        );
+
+        physicalAllocationsByLine.add(physicalAllocations);
+        costResultsByLine.add(costResult);
+        cogsByLine.add(costResult.totalCost);
+        totalCogs += costResult.totalCost;
       }
 
-      final businessDate =
-          BusinessDate.fromUtc(request.occurredAtUtc.toUtc());
       final saleId = 'sale:$transactionId';
       final createdAtUtc = DateTime.now().toUtc().toIso8601String();
 
@@ -138,8 +176,7 @@ class SqliteSaleRepository implements SaleRepository {
           'id': saleId,
           'transaction_id': transactionId,
           'request_fingerprint': fingerprint,
-          'occurred_at_utc':
-              request.occurredAtUtc.toUtc().toIso8601String(),
+          'occurred_at_utc': occurredAtUtc.toIso8601String(),
           'business_date': businessDate,
           'timezone': request.timezone,
           'gross_amount': calculation.grossAmount,
@@ -161,10 +198,12 @@ class SqliteSaleRepository implements SaleRepository {
 
       for (var index = 0; index < calculation.lines.length; index++) {
         final line = calculation.lines[index];
+        final saleItemId = '$saleId:item:$index';
+
         await transaction.insert(
           'sale_items',
           <String, Object?>{
-            'id': '$saleId:item:$index',
+            'id': saleItemId,
             'sale_id': saleId,
             'line_no': index,
             'product_id': line.source.productId,
@@ -181,6 +220,42 @@ class SqliteSaleRepository implements SaleRepository {
           },
           conflictAlgorithm: ConflictAlgorithm.abort,
         );
+
+        final physicalAllocations = physicalAllocationsByLine[index];
+        for (var allocationIndex = 0;
+            allocationIndex < physicalAllocations.length;
+            allocationIndex++) {
+          final allocation = physicalAllocations[allocationIndex];
+          await transaction.insert(
+            'sale_lot_allocations',
+            <String, Object?>{
+              'sale_item_id': saleItemId,
+              'allocation_no': allocationIndex,
+              'lot_id': allocation.lotId,
+              'quantity': allocation.quantity,
+            },
+            conflictAlgorithm: ConflictAlgorithm.abort,
+          );
+        }
+
+        final consumptions = costResultsByLine[index].consumptions;
+        for (var consumptionIndex = 0;
+            consumptionIndex < consumptions.length;
+            consumptionIndex++) {
+          final consumption = consumptions[consumptionIndex];
+          await transaction.insert(
+            'cost_layer_consumptions',
+            <String, Object?>{
+              'sale_item_id': saleItemId,
+              'consumption_no': consumptionIndex,
+              'cost_layer_id': consumption.costLayerId,
+              'quantity': consumption.quantity,
+              'unit_cost': consumption.unitCost,
+              'total_cost': consumption.totalCost,
+            },
+            conflictAlgorithm: ConflictAlgorithm.abort,
+          );
+        }
       }
 
       final journal = await journalService.post(
@@ -232,7 +307,110 @@ class SqliteSaleRepository implements SaleRepository {
     });
   }
 
-  Future<int> _consumeFifo({
+  Future<List<FefoAllocation>> _consumeFefo({
+    required Transaction transaction,
+    required String transactionId,
+    required int lineIndex,
+    required Product product,
+    required int quantity,
+    required DateTime businessDate,
+    required DateTime occurredAtUtc,
+  }) async {
+    final rows = await transaction.rawQuery(
+      '''
+      SELECT l.*
+      FROM inventory_lots l
+      WHERE l.product_id = ?
+        AND l.status = 'saleable'
+        AND (l.on_hand_qty - l.reserved_qty) > 0
+        AND NOT EXISTS (
+          SELECT 1
+          FROM lot_holds h
+          WHERE h.lot_id = l.id
+            AND h.active = 1
+        )
+      ORDER BY
+        CASE WHEN l.expiry_date IS NULL THEN 1 ELSE 0 END,
+        l.expiry_date,
+        l.first_received_at_utc,
+        l.id
+      ''',
+      <Object?>[product.id],
+    );
+
+    final candidates = rows
+        .map(
+          (row) => FefoLotCandidate(
+            id: row['id']! as String,
+            availableQty:
+                (row['on_hand_qty']! as int) - (row['reserved_qty']! as int),
+            firstReceivedAtUtc:
+                DateTime.parse(row['first_received_at_utc']! as String).toUtc(),
+            expiryDate: row['expiry_date'] == null
+                ? null
+                : DateTime.parse(row['expiry_date']! as String),
+          ),
+        )
+        .toList(growable: false);
+
+    late final FefoAllocationResult result;
+    try {
+      result = FefoEngine.allocate(
+        candidates: candidates,
+        requestedQuantity: quantity,
+        businessDate: businessDate,
+        trackExpiry: product.trackExpiry,
+        minShelfLifeDays: product.minShelfLifeDays,
+      );
+    } on FefoInsufficientStockException catch (error) {
+      throw InsufficientStockException(
+        productName: product.nameId,
+        available: error.available,
+        requested: error.requested,
+      );
+    }
+
+    for (var index = 0; index < result.allocations.length; index++) {
+      final allocation = result.allocations[index];
+      final changed = await transaction.rawUpdate(
+        '''
+        UPDATE inventory_lots
+        SET on_hand_qty = on_hand_qty - ?
+        WHERE id = ?
+          AND status = 'saleable'
+          AND (on_hand_qty - reserved_qty) >= ?
+        ''',
+        <Object?>[
+          allocation.quantity,
+          allocation.lotId,
+          allocation.quantity,
+        ],
+      );
+      if (changed != 1) {
+        throw InventoryDataIntegrityException(
+          'Lot FEFO "${allocation.lotId}" berubah saat checkout.',
+        );
+      }
+
+      await transaction.insert(
+        'inventory_movements',
+        <String, Object?>{
+          'id': 'inventory:$transactionId:$lineIndex:$index',
+          'product_id': product.id,
+          'lot_id': allocation.lotId,
+          'reference_id': transactionId,
+          'movement_type': 'sale',
+          'quantity_delta': -allocation.quantity,
+          'occurred_at_utc': occurredAtUtc.toIso8601String(),
+        },
+        conflictAlgorithm: ConflictAlgorithm.abort,
+      );
+    }
+
+    return result.allocations;
+  }
+
+  Future<FifoCostResult> _consumeFifoCost({
     required Transaction transaction,
     required String transactionId,
     required int lineIndex,
@@ -240,70 +418,82 @@ class SqliteSaleRepository implements SaleRepository {
     required int quantity,
     required DateTime occurredAtUtc,
   }) async {
-    final lots = await transaction.query(
-      'inventory_lots',
+    final rows = await transaction.query(
+      'inventory_cost_layers',
       where: 'product_id = ? AND remaining_qty > 0',
       whereArgs: <Object?>[product.id],
       orderBy: 'acquired_at_utc, id',
     );
 
-    final availableInLots = lots.fold<int>(
-      0,
-      (sum, row) => sum + (row['remaining_qty']! as int),
-    );
+    final layers = rows
+        .map(
+          (row) => FifoCostLayerCandidate(
+            id: row['id']! as String,
+            remainingQty: row['remaining_qty']! as int,
+            unitCost: row['unit_cost']! as int,
+            acquiredAtUtc:
+                DateTime.parse(row['acquired_at_utc']! as String).toUtc(),
+          ),
+        )
+        .toList(growable: false);
 
-    if (availableInLots < quantity) {
+    late final FifoCostResult result;
+    try {
+      result = FifoCostEngine.allocate(
+        layers: layers,
+        requestedQuantity: quantity,
+      );
+    } on FifoCostDataIntegrityException catch (error) {
       throw InventoryDataIntegrityException(
-        'Layer FIFO untuk "${product.nameId}" hanya $availableInLots, '
-        'sedangkan stok produk tercatat ${product.stockQty}.',
+        'Layer FIFO untuk "${product.nameId}" hanya ${error.available}, '
+        'sedangkan FEFO meminta ${error.requested}.',
       );
     }
 
-    var remaining = quantity;
-    var cogs = 0;
-    var movementIndex = 0;
-
-    for (final lot in lots) {
-      if (remaining == 0) {
-        break;
-      }
-
-      final lotRemaining = lot['remaining_qty']! as int;
-      final unitCost = lot['unit_cost']! as int;
-      final take = remaining < lotRemaining ? remaining : lotRemaining;
-
-      await transaction.update(
-        'inventory_lots',
-        <String, Object?>{
-          'remaining_qty': lotRemaining - take,
-        },
-        where: 'id = ?',
-        whereArgs: <Object?>[lot['id']],
+    for (var index = 0; index < result.consumptions.length; index++) {
+      final consumption = result.consumptions[index];
+      final changed = await transaction.rawUpdate(
+        '''
+        UPDATE inventory_cost_layers
+        SET remaining_qty = remaining_qty - ?
+        WHERE id = ? AND remaining_qty >= ?
+        ''',
+        <Object?>[
+          consumption.quantity,
+          consumption.costLayerId,
+          consumption.quantity,
+        ],
       );
-
-      final totalCost = take * unitCost;
-      cogs += totalCost;
+      if (changed != 1) {
+        throw InventoryDataIntegrityException(
+          'Layer FIFO "${consumption.costLayerId}" berubah saat checkout.',
+        );
+      }
 
       await transaction.insert(
         'stock_movements',
         <String, Object?>{
-          'id':
-              'stock:$transactionId:$lineIndex:$movementIndex',
+          'id': 'stock:$transactionId:$lineIndex:$index',
           'product_id': product.id,
           'reference_id': transactionId,
           'movement_type': 'sale',
-          'quantity_delta': -take,
-          'unit_cost': unitCost,
-          'total_cost': totalCost,
+          'quantity_delta': -consumption.quantity,
+          'unit_cost': consumption.unitCost,
+          'total_cost': consumption.totalCost,
           'occurred_at_utc': occurredAtUtc.toIso8601String(),
         },
         conflictAlgorithm: ConflictAlgorithm.abort,
       );
-
-      remaining -= take;
-      movementIndex++;
     }
 
+    return result;
+  }
+
+  Future<void> _decrementProductStock({
+    required Transaction transaction,
+    required Product product,
+    required int quantity,
+  }) async {
     final updatedRows = await transaction.rawUpdate(
       '''
       UPDATE products
@@ -320,8 +510,6 @@ class SqliteSaleRepository implements SaleRepository {
         requested: quantity,
       );
     }
-
-    return cogs;
   }
 
   JournalEntry _buildSaleJournal({
@@ -362,7 +550,6 @@ class SqliteSaleRepository implements SaleRepository {
     );
 
     if (calculation.ppnAmount > 0) {
-      // Ordinary sales always credit the approved PPN payable account.
       lines.add(
         JournalLine(
           accountCode: CoaAccounts.ppnPayable.code,
@@ -420,6 +607,8 @@ class SqliteSaleRepository implements SaleRepository {
       price: row['price']! as int,
       ppnExempt: (row['ppn_exempt']! as int) == 1,
       stockQty: row['stock_qty']! as int,
+      trackExpiry: (row['track_expiry']! as int) == 1,
+      minShelfLifeDays: row['min_shelf_life_days']! as int,
     );
   }
 
