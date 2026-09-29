@@ -48,6 +48,7 @@ class PaymentRequest {
     required this.occurredAtUtc,
     required List<PaymentLineInput> lines,
     this.transactionDiscountAmount = 0,
+    this.reservationId,
     this.timezone = BusinessDate.timezoneId,
   }) : lines = List<PaymentLineInput>.unmodifiable(lines);
 
@@ -56,6 +57,7 @@ class PaymentRequest {
   final DateTime occurredAtUtc;
   final List<PaymentLineInput> lines;
   final int transactionDiscountAmount;
+  final String? reservationId;
   final String timezone;
 
   void validate() {
@@ -70,6 +72,11 @@ class PaymentRequest {
     if (transactionDiscountAmount < 0) {
       throw const PaymentValidationException(
         'Diskon transaksi tidak boleh negatif.',
+      );
+    }
+    if (reservationId != null && reservationId!.trim().isEmpty) {
+      throw const PaymentValidationException(
+        'ID reservasi tidak boleh kosong.',
       );
     }
     if (timezone != BusinessDate.timezoneId) {
