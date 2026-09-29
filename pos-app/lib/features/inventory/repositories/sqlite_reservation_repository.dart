@@ -52,9 +52,9 @@ class InventoryReservation {
 
 /// Creates and releases pre-payment physical stock reservations.
 ///
-/// Reserved quantities remain in [inventory_lots.on_hand_qty] and are excluded
-/// from later FEFO allocations through [reserved_qty]. Checkout consumes both
-/// fields atomically when [PaymentRequest.reservationId] is supplied.
+/// Reserved quantities remain in `inventory_lots.on_hand_qty` and are excluded
+/// from later FEFO allocations through `reserved_qty`. Checkout consumes both
+/// fields atomically when `PaymentRequest.reservationId` is supplied.
 class SqliteInventoryReservationRepository {
   SqliteInventoryReservationRepository(this._database);
 
