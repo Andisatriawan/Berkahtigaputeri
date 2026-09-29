@@ -126,15 +126,26 @@ class SqliteSaleRepository implements SaleRepository {
           );
         }
 
-        final physicalAllocations = await _consumeFefo(
-          transaction: transaction,
-          transactionId: transactionId,
-          lineIndex: lineIndex,
-          product: product,
-          quantity: requestedQuantity,
-          businessDate: businessDateValue,
-          occurredAtUtc: occurredAtUtc,
-        );
+        final physicalAllocations = request.reservationId == null
+            ? await _consumeFefo(
+                transaction: transaction,
+                transactionId: transactionId,
+                lineIndex: lineIndex,
+                product: product,
+                quantity: requestedQuantity,
+                businessDate: businessDateValue,
+                occurredAtUtc: occurredAtUtc,
+              )
+            : await _consumeReservedFefo(
+                transaction: transaction,
+                transactionId: transactionId,
+                reservationId: request.reservationId!.trim(),
+                lineIndex: lineIndex,
+                product: product,
+                quantity: requestedQuantity,
+                businessDate: businessDateValue,
+                occurredAtUtc: occurredAtUtc,
+              );
 
         final costResult = await _consumeFifoCost(
           transaction: transaction,
@@ -165,6 +176,27 @@ class SqliteSaleRepository implements SaleRepository {
         costResultsByLine.add(costResult);
         cogsByLine.add(costResult.totalCost);
         totalCogs += costResult.totalCost;
+      }
+
+      if (request.reservationId != null) {
+        final committed = await transaction.update(
+          'inventory_reservations',
+          <String, Object?>{
+            'status': 'committed',
+            'committed_at_utc': occurredAtUtc.toIso8601String(),
+          },
+          where: 'id = ? AND transaction_id = ? AND status = ?',
+          whereArgs: <Object?>[
+            request.reservationId!.trim(),
+            transactionId,
+            'active',
+          ],
+        );
+        if (committed != 1) {
+          throw const ReservationCheckoutException(
+            'Reservasi tidak aktif atau tidak cocok dengan transaksi.',
+          );
+        }
       }
 
       final saleId = 'sale:$transactionId';
@@ -410,6 +442,164 @@ class SqliteSaleRepository implements SaleRepository {
     return result.allocations;
   }
 
+  Future<List<FefoAllocation>> _consumeReservedFefo({
+    required Transaction transaction,
+    required String transactionId,
+    required String reservationId,
+    required int lineIndex,
+    required Product product,
+    required int quantity,
+    required DateTime businessDate,
+    required DateTime occurredAtUtc,
+  }) async {
+    final reservations = await transaction.query(
+      'inventory_reservations',
+      where: 'id = ? AND transaction_id = ? AND status = ?',
+      whereArgs: <Object?>[reservationId, transactionId, 'active'],
+      limit: 1,
+    );
+    if (reservations.isEmpty) {
+      throw const ReservationCheckoutException(
+        'Reservasi tidak aktif atau tidak cocok dengan transaksi.',
+      );
+    }
+
+    final expiresAtUtc = DateTime.parse(
+      reservations.single['expires_at_utc']! as String,
+    ).toUtc();
+    if (!expiresAtUtc.isAfter(occurredAtUtc)) {
+      throw const ReservationCheckoutException(
+        'Reservasi sudah kedaluwarsa.',
+      );
+    }
+
+    final rows = await transaction.query(
+      'inventory_reservation_lines',
+      where: 'reservation_id = ? AND line_no = ? AND product_id = ?',
+      whereArgs: <Object?>[reservationId, lineIndex, product.id],
+      orderBy: 'allocation_no',
+    );
+
+    final reservedQuantity = rows.fold<int>(
+      0,
+      (sum, row) => sum + (row['quantity']! as int),
+    );
+    if (reservedQuantity != quantity) {
+      throw ReservationCheckoutException(
+        'Jumlah reservasi untuk "\${product.nameId}" tidak cocok '
+        'dengan checkout.',
+      );
+    }
+
+    final allocations = <FefoAllocation>[];
+    for (var index = 0; index < rows.length; index++) {
+      final row = rows[index];
+      final lotId = row['lot_id']! as String;
+      final allocatedQuantity = row['quantity']! as int;
+
+      final lots = await transaction.rawQuery(
+        '''
+        SELECT
+          l.*,
+          EXISTS(
+            SELECT 1
+            FROM lot_holds h
+            WHERE h.lot_id = l.id
+              AND h.active = 1
+          ) AS has_active_hold
+        FROM inventory_lots l
+        WHERE l.id = ? AND l.product_id = ?
+        ''',
+        <Object?>[lotId, product.id],
+      );
+      if (lots.isEmpty) {
+        throw ReservationCheckoutException(
+          'Lot reservasi "$lotId" tidak ditemukan.',
+        );
+      }
+      final lot = lots.single;
+      if (lot['status'] != 'saleable' ||
+          (lot['has_active_hold']! as int) == 1) {
+        throw ReservationCheckoutException(
+          'Lot reservasi "$lotId" tidak lagi dapat dijual.',
+        );
+      }
+
+      try {
+        FefoEngine.allocate(
+          candidates: <FefoLotCandidate>[
+            FefoLotCandidate(
+              id: lotId,
+              availableQty: allocatedQuantity,
+              firstReceivedAtUtc: DateTime.parse(
+                lot['first_received_at_utc']! as String,
+              ).toUtc(),
+              expiryDate: lot['expiry_date'] == null
+                  ? null
+                  : DateTime.parse(lot['expiry_date']! as String),
+            ),
+          ],
+          requestedQuantity: allocatedQuantity,
+          businessDate: businessDate,
+          trackExpiry: product.trackExpiry,
+          minShelfLifeDays: product.minShelfLifeDays,
+        );
+      } on FefoException {
+        throw ReservationCheckoutException(
+          'Lot reservasi "$lotId" tidak lagi memenuhi aturan FEFO.',
+        );
+      }
+
+      final changed = await transaction.rawUpdate(
+        '''
+        UPDATE inventory_lots
+        SET
+          on_hand_qty = on_hand_qty - ?,
+          reserved_qty = reserved_qty - ?
+        WHERE id = ?
+          AND status = 'saleable'
+          AND on_hand_qty >= ?
+          AND reserved_qty >= ?
+        ''',
+        <Object?>[
+          allocatedQuantity,
+          allocatedQuantity,
+          lotId,
+          allocatedQuantity,
+          allocatedQuantity,
+        ],
+      );
+      if (changed != 1) {
+        throw ReservationCheckoutException(
+          'Kuantitas lot reservasi "$lotId" berubah saat checkout.',
+        );
+      }
+
+      await transaction.insert(
+        'inventory_movements',
+        <String, Object?>{
+          'id': 'inventory:$transactionId:$lineIndex:$index',
+          'product_id': product.id,
+          'lot_id': lotId,
+          'reference_id': transactionId,
+          'movement_type': 'sale',
+          'quantity_delta': -allocatedQuantity,
+          'occurred_at_utc': occurredAtUtc.toIso8601String(),
+        },
+        conflictAlgorithm: ConflictAlgorithm.abort,
+      );
+
+      allocations.add(
+        FefoAllocation(
+          lotId: lotId,
+          quantity: allocatedQuantity,
+        ),
+      );
+    }
+
+    return allocations;
+  }
+
   Future<FifoCostResult> _consumeFifoCost({
     required Transaction transaction,
     required String transactionId,
@@ -621,6 +811,7 @@ class SqliteSaleRepository implements SaleRepository {
             request.occurredAtUtc.toUtc().toIso8601String(),
         'transactionDiscountAmount':
             request.transactionDiscountAmount,
+        'reservationId': request.reservationId?.trim(),
         'timezone': request.timezone,
         'lines': request.lines
             .map(
@@ -678,6 +869,10 @@ class InsufficientStockException extends SaleRepositoryException {
 
 class InventoryDataIntegrityException extends SaleRepositoryException {
   const InventoryDataIntegrityException(super.message);
+}
+
+class ReservationCheckoutException extends SaleRepositoryException {
+  const ReservationCheckoutException(super.message);
 }
 
 class SaleDataIntegrityException extends SaleRepositoryException {
