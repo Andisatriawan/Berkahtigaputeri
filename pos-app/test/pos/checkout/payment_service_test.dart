@@ -211,10 +211,17 @@ void main() {
 
       final lotRows = await database.database.query(
         'inventory_lots',
+        orderBy: 'first_received_at_utc, id',
+      );
+      expect(lotRows[0]['on_hand_qty'], 0);
+      expect(lotRows[1]['on_hand_qty'], 1);
+
+      final costLayerRows = await database.database.query(
+        'inventory_cost_layers',
         orderBy: 'acquired_at_utc, id',
       );
-      expect(lotRows[0]['remaining_qty'], 0);
-      expect(lotRows[1]['remaining_qty'], 1);
+      expect(costLayerRows[0]['remaining_qty'], 0);
+      expect(costLayerRows[1]['remaining_qty'], 1);
 
       final movementRows = await database.database.query(
         'stock_movements',
@@ -385,7 +392,10 @@ void main() {
 
       expect((await products.findById('P-ROLLBACK'))!.stockQty, 1);
       final lots = await database.database.query('inventory_lots');
-      expect(lots.single['remaining_qty'], 1);
+      expect(lots.single['on_hand_qty'], 1);
+      final costLayers =
+          await database.database.query('inventory_cost_layers');
+      expect(costLayers.single['remaining_qty'], 1);
       expect(await _count(database, 'sales'), 0);
       expect(await _count(database, 'sale_items'), 0);
       expect(await _count(database, 'journals'), 0);
