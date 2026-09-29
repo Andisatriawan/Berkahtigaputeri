@@ -12,6 +12,8 @@ class Product {
     required this.price,
     required this.ppnExempt,
     required this.stockQty,
+    this.trackExpiry = false,
+    this.minShelfLifeDays = 0,
   });
 
   final String id;
@@ -22,6 +24,13 @@ class Product {
   final bool ppnExempt;
   final int stockQty;
 
+  /// When true, every saleable physical lot must have an expiry date and FEFO
+  /// excludes lots that are too close to expiry.
+  final bool trackExpiry;
+
+  /// Minimum remaining shelf life required at checkout.
+  final int minShelfLifeDays;
+
   Product copyWith({
     String? id,
     String? sku,
@@ -31,6 +40,8 @@ class Product {
     int? price,
     bool? ppnExempt,
     int? stockQty,
+    bool? trackExpiry,
+    int? minShelfLifeDays,
   }) {
     return Product(
       id: id ?? this.id,
@@ -40,6 +51,8 @@ class Product {
       price: price ?? this.price,
       ppnExempt: ppnExempt ?? this.ppnExempt,
       stockQty: stockQty ?? this.stockQty,
+      trackExpiry: trackExpiry ?? this.trackExpiry,
+      minShelfLifeDays: minShelfLifeDays ?? this.minShelfLifeDays,
     );
   }
 }
