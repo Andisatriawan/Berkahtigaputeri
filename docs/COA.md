@@ -3,6 +3,21 @@
 
 > LOCKED CONTRACT: ChatGPT Codex and all AI agents MUST use these exact codes. Never invent new codes. If a transaction needs a new account, ask first.
 
+## M1 Accounting Core
+
+| Kode | Nama Indonesia | Tipe |
+| --- | --- | --- |
+| 1-1010 | Kas Tunai | Aset Lancar |
+| 1-1020 | QRIS Clearing | Aset Lancar |
+| 1-1030 | Bank Transfer | Aset Lancar |
+| 1-1040 | Persediaan Barang | Aset Lancar |
+| 2-2010 | Utang PPN 11% | Kewajiban |
+| 3-3010 | Modal Pemilik | Ekuitas |
+| 4-4010 | Penjualan | Pendapatan |
+| 5-5010 | Harga Pokok Penjualan | HPP |
+| 6-6020 | Beban Selisih Kas Kurang | Beban |
+
+
 ## 1 - ASET / ASSETS
 
 | Kode | Nama Indonesia | Nama English | Tipe | Saldo Normal | Deskripsi |
