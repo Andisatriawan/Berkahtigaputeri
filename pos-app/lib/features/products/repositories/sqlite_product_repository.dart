@@ -59,7 +59,7 @@ class SqliteProductRepository {
 
   /// Receives a new physical batch and creates its first FIFO financial layer.
   ///
-  /// [id] is the physical lot ID. [costLayerId] defaults to cost:<id>.
+  /// [id] is the physical lot ID. [costLayerId] defaults to `cost:<id>`.
   /// Expiry-tracked products require both [batchNo] and [expiryDate].
   Future<void> addInventoryLot({
     required String id,
