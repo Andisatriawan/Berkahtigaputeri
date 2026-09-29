@@ -1,44 +1,114 @@
-// docs/COA.md
+# Chart of Accounts - Berkah Tiga Puteri POS
+# PSAK compliant for Indonesian retail SME, PPN 11%
 
-# Chart of Accounts (COA)
+> LOCKED CONTRACT: ChatGPT Codex and all AI agents MUST use these exact codes. Never invent new codes. If a transaction needs a new account, ask first.
 
-Dokumen ini adalah sumber kebenaran untuk kode akun yang boleh digunakan oleh aplikasi Berkah Tiga Puteri.
+## 1 - ASET / ASSETS
 
-Jangan menambahkan, mengganti, atau menebak kode akun di kode aplikasi tanpa memperbarui dokumen ini berdasarkan keputusan bisnis yang eksplisit.
+| Kode | Nama Indonesia | Nama English | Tipe | Saldo Normal | Deskripsi |
+| --- | --- | --- | --- | --- | --- |
+| 1-1010 | Kas Tunai | Cash on Hand | Aset Lancar | Debit | Uang tunai di laci kasir, per shift |
+| 1-1020 | QRIS Clearing | QRIS Clearing | Aset Lancar | Debit | Dana QRIS belum masuk bank, settlement H+1 |
+| 1-1030 | Bank Transfer | Bank Transfer | Aset Lancar | Debit | Mutasi transfer bank BCA/BRI |
+| 1-1040 | Persediaan Barang | Inventory | Aset Lancar | Debit | Stok barang dagangan, metode FIFO |
+| 1-1050 | Piutang Usaha | Accounts Receivable | Aset Lancar | Debit | Penjualan kredit pelanggan |
+| 1-1060 | Peralatan Toko | Store Equipment | Aset Tetap | Debit | Printer struk, scanner barcode |
+| 1-1070 | Akumulasi Penyusutan Peralatan | Accumulated Depreciation | Aset Tetap | Kredit | Kontra aset untuk 1-1060 |
 
-| Kode | Nama Akun | Jenis | Saldo Normal | Penggunaan |
-| --- | --- | --- | --- | --- |
-| 1-1010 | Kas | Aset | Debit | Penerimaan pembayaran tunai |
-| 1-1020 | QRIS | Aset | Debit | Penerimaan pembayaran QRIS |
-| 1-1030 | Bank | Aset | Debit | Penerimaan pembayaran bank |
-| 1-1040 | Persediaan | Aset | Debit | Nilai persediaan barang |
-| 2-2010 | Utang PPN | Liabilitas | Kredit | PPN keluaran 11% |
-| 4-4010 | Penjualan | Pendapatan | Kredit | Penjualan setelah diskon |
-| 5-5010 | Harga Pokok Penjualan | Beban | Debit | Harga pokok barang yang terjual |
+## 2 - KEWAJIBAN / LIABILITIES
 
-## Aturan Posting POS
+| Kode | Nama Indonesia | Nama English | Tipe | Saldo Normal | Deskripsi |
+| --- | --- | --- | --- | --- | --- |
+| 2-2010 | Utang PPN 11% | PPN Payable 11% | Kewajiban | Kredit | PPN keluaran atas penjualan, lapor bulanan |
+| 2-2020 | Utang Supplier | Supplier Payable | Kewajiban | Kredit | Utang pembelian stok ke supplier |
+| 2-2030 | Utang Gaji | Salary Payable | Kewajiban | Kredit | Gaji karyawan belum dibayar |
 
-PPN dihitung sebesar 11% dari nilai penjualan setelah diskon.
+## 3 - EKUITAS / EQUITY
 
-Posting penerimaan pembayaran:
+| Kode | Nama Indonesia | Nama English | Tipe | Saldo Normal | Deskripsi |
+| --- | --- | --- | --- | --- | --- |
+| 3-3010 | Modal Pemilik | Owner Capital | Ekuitas | Kredit | Modal awal Berkah Tiga Puteri |
+| 3-3020 | Laba Ditahan | Retained Earnings | Ekuitas | Kredit | Akumulasi laba tahun berjalan |
+| 3-3030 | Prive | Owner Drawings | Ekuitas | Debit | Pengambilan pribadi pemilik |
 
-- Debit 1-1010 Kas untuk pembayaran tunai; atau
-- Debit 1-1020 QRIS untuk pembayaran QRIS; atau
-- Debit 1-1030 Bank untuk pembayaran bank.
-- Kredit 4-4010 Penjualan sebesar nilai penjualan setelah diskon.
-- Kredit 2-2010 Utang PPN sebesar PPN 11%.
+## 4 - PENDAPATAN / REVENUE
 
-Posting harga pokok:
+| Kode | Nama Indonesia | Nama English | Tipe | Saldo Normal | Deskripsi |
+| --- | --- | --- | --- | --- | --- |
+| 4-4010 | Penjualan | Sales | Pendapatan | Kredit | Penjualan kotor sebelum diskon dan PPN |
+| 4-4020 | Diskon Penjualan | Sales Discounts | Pendapatan | Debit | Kontra 4-4010, diskon per item dan transaksi |
+| 4-4030 | Retur Penjualan | Sales Returns | Pendapatan | Debit | Kontra 4-4010, retur barang |
+| 4-4040 | Selisih Kas Lebih | Cash Overage Income | Pendapatan | Kredit | Kelebihan kas saat tutup shift |
 
-- Debit 5-5010 Harga Pokok Penjualan.
-- Kredit 1-1040 Persediaan.
+## 5 - HARGA POKOK PENJUALAN / COGS
 
-## Invarian Akuntansi
+| Kode | Nama Indonesia | Nama English | Tipe | Saldo Normal | Deskripsi |
+| --- | --- | --- | --- | --- | --- |
+| 5-5010 | Harga Pokok Penjualan | Cost of Goods Sold | HPP | Debit | HPP otomatis saat penjualan |
 
-Setiap jurnal wajib memenuhi:
+## 6 - BEBAN / EXPENSES
 
-`total debit == total kredit`
+| Kode | Nama Indonesia | Nama English | Tipe | Saldo Normal | Deskripsi |
+| --- | --- | --- | --- | --- | --- |
+| 6-6010 | Beban Gaji | Salary Expense | Beban | Debit | Gaji kasir dan karyawan |
+| 6-6020 | Beban Selisih Kas Kurang | Cash Shortage Expense | Beban | Debit | Kekurangan kas saat tutup shift |
+| 6-6030 | Beban Operasional Toko | Store Operational | Beban | Debit | Plastik, struk, ATK |
+| 6-6040 | Beban Sewa | Rent Expense | Beban | Debit | Sewa ruko |
+| 6-6050 | Beban Listrik dan Air | Utilities Expense | Beban | Debit | Listrik, air, internet |
+| 6-6060 | Beban Penyusutan | Depreciation Expense | Beban | Debit | Penyusutan peralatan toko |
 
-Jika tidak seimbang, seluruh posting harus ditolak dan tidak boleh ada perubahan yang tersimpan.
+---
 
-Setiap transaksi harus idempoten berdasarkan `transaction_id`: satu `transaction_id` hanya boleh menghasilkan satu jurnal yang tersimpan.
+## POS Posting Rules - WAJIB
+
+### 1. Penjualan Tunai / Cash
+```
+Dr 1-1010 Kas Tunai (Grand Total)
+Cr 4-4010 Penjualan (DPP = Subtotal - Diskon)
+Cr 2-2010 Utang PPN 11% (11% x DPP)
+Dr 5-5010 HPP
+Cr 1-1040 Persediaan Barang
+```
+
+### 2. Penjualan QRIS
+```
+Dr 1-1020 QRIS Clearing (Grand Total)
+Cr 4-4010 Penjualan (DPP)
+Cr 2-2010 Utang PPN 11%
+Dr 5-5010 HPP
+Cr 1-1040 Persediaan Barang
+```
+
+### 3. Penjualan Transfer Bank
+```
+Dr 1-1030 Bank Transfer (Grand Total)
+Cr 4-4010 Penjualan (DPP)
+Cr 2-2010 Utang PPN 11%
+Dr 5-5010 HPP
+Cr 1-1040 Persediaan Barang
+```
+
+### 4. Diskon
+Diskon mengurangi DPP sebelum PPN. PPN = 11% x (Subtotal - Diskon). Jangan hitung PPN sebelum diskon.
+
+### 5. Tutup Shift
+Jika kas aktual < kas sistem:
+```
+Dr 6-6020 Beban Selisih Kas Kurang
+Cr 1-1010 Kas Tunai
+```
+Jika kas aktual > kas sistem:
+```
+Dr 1-1010 Kas Tunai
+Cr 4-4040 Selisih Kas Lebih
+```
+
+### 6. Retur Penjualan
+Reverse dari penjualan awal dengan akun 4-4030.
+
+## Validation Rules for Codex
+1. Every JournalEntry must satisfy: sum(Debit) == sum(Credit), else rollback
+2. transactionId must be unique, idempotent, no double posting
+3. PPN exempt products (ppnExempt=true): no 2-2010 posting for that line
+4. Negative stock blocked without managerPin
+5. All amounts in integer Rupiah, no decimals
