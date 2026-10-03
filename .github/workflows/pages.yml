@@ -25,20 +25,6 @@ jobs:
           rm -rf _site
           mkdir -p _site/btp-admin
           cp -a btp-admin/. _site/btp-admin/
-          cat > _site/index.html <<'EOF'
-          <!doctype html>
-          <html lang="id">
-          <head>
-            <meta charset="utf-8">
-            <meta name="viewport" content="width=device-width,initial-scale=1">
-            <meta http-equiv="refresh" content="0; url=./btp-admin/">
-            <title>Berkah POS Admin</title>
-          </head>
-          <body>
-            <a href="./btp-admin/">Buka Berkah POS Admin</a>
-          </body>
-          </html>
-          EOF
       - uses: actions/upload-pages-artifact@v3
         with:
           path: _site/
