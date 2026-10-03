@@ -1,0 +1,8 @@
+# Cursor Rules - Berkah POS
+
+- Always read docs/permanent/DOC_00_MASTER_ROADMAP.md first
+- 3-layer config: global -> tenant -> device, keys as defined in DOC_01
+- app_config schema: key TEXT PRIMARY KEY, value JSONB
+- Official admin path: btp-admin/
+- Priority execution: finish one priority LIVE before next
+- Docs persistence: everything in docs/permanent/ is compliance
