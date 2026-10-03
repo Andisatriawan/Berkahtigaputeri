@@ -1,7 +1,7 @@
 name: Deploy btp-admin to GitHub Pages
 on:
   push:
-    branches: [main]
+    branches: [main, feat/simulated-hardware-supabase-admin-a19cb3f]
   workflow_dispatch:
 permissions:
   contents: read
@@ -19,32 +19,18 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Prepare Pages artifact with /btp-admin/ path
+      - name: List files debug
         run: |
-          set -euxo pipefail
-          rm -rf _site
-          mkdir -p _site
-          cp -R btp-admin _site/btp-admin
-          cat > _site/index.html <<'EOF'
-          <!doctype html>
-          <html lang="id">
-          <head>
-            <meta charset="utf-8">
-            <meta name="viewport" content="width=device-width,initial-scale=1">
-            <meta http-equiv="refresh" content="0; url=btp-admin/">
-            <link rel="canonical" href="btp-admin/">
-            <title>Berkah POS Admin</title>
-          </head>
-          <body><a href="btp-admin/">Buka Berkah POS Admin</a></body>
-          </html>
-          EOF
-          find _site -maxdepth 2 -type f -print | sort
+          pwd
+          ls -la
+          ls -la btp-admin/ || echo "btp-admin NOT FOUND IN THIS BRANCH"
+          ls -la docs/permanent/ || echo "docs/permanent not found"
       - name: Setup Pages
         uses: actions/configure-pages@v4
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: ./_site
+          path: ./btp-admin
       - name: Deploy to Pages
         id: deployment
         uses: actions/deploy-pages@v4
