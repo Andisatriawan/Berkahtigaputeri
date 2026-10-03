@@ -20,13 +20,26 @@ jobs:
       - uses: actions/configure-pages@v4
         with:
           enablement: true
-      - name: Prepare Pages artifact with /btp-admin/ path
+      - name: Keep /btp-admin/ compatibility URL
         run: |
-          rm -rf _site
-          mkdir -p _site/btp-admin
-          cp -a btp-admin/. _site/btp-admin/
+          mkdir -p btp-admin/btp-admin
+          cat > btp-admin/btp-admin/index.html <<'EOF'
+          <!doctype html>
+          <html lang="id">
+          <head>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width,initial-scale=1">
+            <meta http-equiv="refresh" content="0; url=../">
+            <link rel="canonical" href="../">
+            <title>Berkah POS Admin</title>
+          </head>
+          <body>
+            <a href="../">Buka Berkah POS Admin</a>
+          </body>
+          </html>
+          EOF
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: _site/
+          path: btp-admin
       - id: deployment
         uses: actions/deploy-pages@v4
