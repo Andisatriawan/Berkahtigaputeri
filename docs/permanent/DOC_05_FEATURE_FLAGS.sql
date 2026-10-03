@@ -15,10 +15,12 @@ on conflict (tenant_id) do update set
 
 insert into app_config (key, value, updated_at)
 values
-  ('tenant:clientA:service:pos', '{"qris_enabled":true,"qris_mdr":0.5,"version":1}'::jsonb, now()),
-  ('tenant:clientB:service:pos', '{"qris_enabled":true,"qris_mdr":0.7,"version":1}'::jsonb, now()),
+  ('tenant:clientA:service:pos', '{"qris_enabled":true,"mdr":0.5,"qris_mdr":0.5,"version":1}'::jsonb, now()),
+  ('tenant:clientB:service:pos', '{"qris_enabled":true,"mdr":0.7,"qris_mdr":0.7,"version":1}'::jsonb, now()),
   ('tenant:clientB:service:akuntansi', '{"auto_jurnal":true,"ppn_account":"2-2010","version":1}'::jsonb, now())
-on conflict (key) do nothing;
+on conflict (key) do update set
+  value = excluded.value,
+  updated_at = excluded.updated_at;
 
 select tenant_id, features from tenants where tenant_id in ('clientA','clientB') order by tenant_id;
 select key, value from app_config where key like 'tenant:clientA:service:%' or key like 'tenant:clientB:service:%' order by key;
