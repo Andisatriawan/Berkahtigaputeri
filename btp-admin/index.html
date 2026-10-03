@@ -1,0 +1,453 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Berkah POS - Official Admin</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; background: #fff; color: #111; font-family: Arial, Helvetica, sans-serif; }
+    body { line-height: 1.4; }
+    main { max-width: 980px; margin: 0 auto; padding: 22px 16px 48px; }
+    h1 { margin: 0 0 6px; font-size: 24px; }
+    .schema { margin: 0 0 18px; font-family: monospace; font-size: 13px; font-weight: 700; }
+    .toolbar { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px 0 16px; border-top: 1px solid #111; border-bottom: 1px solid #111; }
+    button { padding: 9px 13px; border: 1px solid #111; background: #fff; color: #111; font: inherit; font-weight: 700; cursor: pointer; }
+    button.primary { background: #111; color: #fff; }
+    button:disabled { opacity: .5; cursor: not-allowed; }
+    .status { margin: 12px 0 0; padding: 10px; border: 1px solid #aaa; white-space: pre-wrap; font-size: 13px; }
+    .status.ok { border-color: #1a7f37; }
+    .status.bad { border-color: #b42318; }
+    section { padding: 20px 0; border-bottom: 1px solid #111; }
+    section h2 { margin: 0 0 14px; font-size: 17px; }
+    .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px 22px; }
+    .field { min-width: 0; }
+    .field.full { grid-column: 1 / -1; }
+    label.title { display: block; margin-bottom: 5px; font-size: 13px; font-weight: 700; }
+    input:not([type="checkbox"]), select, textarea { width: 100%; min-height: 38px; padding: 8px 9px; border: 1px solid #777; background: #fff; color: #111; font: inherit; border-radius: 0; }
+    textarea { min-height: 72px; resize: vertical; }
+    .checkline { min-height: 38px; display: flex; align-items: center; gap: 8px; border: 1px solid #777; padding: 7px 9px; }
+    .checkline input { width: 18px; height: 18px; margin: 0; }
+    .help { margin-top: 5px; font-size: 11px; color: #444; }
+    .help b { color: #111; }
+    .scope { margin-left: 6px; font-size: 10px; font-weight: normal; color: #666; }
+    .footer-actions { display: flex; flex-wrap: wrap; gap: 8px; padding-top: 18px; }
+    .note { margin: 8px 0 0; font-size: 11px; color: #555; }
+    code { font-family: monospace; }
+    @media (max-width: 680px) {
+      .grid { grid-template-columns: 1fr; }
+      .field.full { grid-column: auto; }
+      input, select, textarea, button { font-size: 16px; }
+    }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Berkah POS - Admin Resmi</h1>
+  <p class="schema">Schema LIVE app_config(key PRIMARY KEY, value JSONB) - global + device:&lt;id&gt;</p>
+
+  <div class="toolbar">
+    <button type="button" onclick="loginAdmin()">Login Admin</button>
+    <button type="button" onclick="testConnection()">Test Connection</button>
+    <button type="button" onclick="loadFromCloud()">Load from Cloud</button>
+    <button type="button" onclick="exportJson()">Export JSON</button>
+    <span id="fieldCount" style="align-self:center;font-size:12px"></span>
+  </div>
+  <div class="grid" style="padding:14px 0 0">
+    <div class="field">
+      <label class="title" for="adminEmail">Admin Email <span class="scope">[AUTH, bukan setting]</span></label>
+      <input id="adminEmail" type="email" autocomplete="username" placeholder="owner/admin Supabase Auth">
+      <div class="help"><b>(?)</b> Apa: email akun Supabase Auth dengan membership owner/admin. Contoh: owner@domain.id. Jika kosong: operasi LIVE yang dilindungi RLS tidak bisa login.</div>
+    </div>
+    <div class="field">
+      <label class="title" for="adminPassword">Admin Password <span class="scope">[AUTH, tidak disimpan]</span></label>
+      <input id="adminPassword" type="password" autocomplete="current-password" placeholder="tidak disimpan">
+      <div class="help"><b>(?)</b> Apa: password akun admin untuk session Supabase Auth. Contoh: password akun owner/admin. Jika kosong: SAVE/LOAD LIVE gagal bila belum ada session aktif.</div>
+    </div>
+  </div>
+  <div id="status" class="status">Belum ada operasi. Login admin diperlukan oleh RLS untuk licences dan app_config.</div>
+
+  <div id="sections"></div>
+
+  <div class="footer-actions">
+    <button class="primary" type="button" onclick="saveGlobal()">SAVE GLOBAL</button>
+    <button class="primary" type="button" onclick="saveDevice()">SAVE DEVICE</button>
+    <button class="primary" type="button" onclick="saveBoth()">SAVE BOTH</button>
+    <button type="button" onclick="exportJson()">Export JSON</button>
+  </div>
+  <p class="note">Fallback browser memakai localStorage dengan key <code>global</code> dan <code>device:&lt;device_id&gt;</code>. Tidak pernah gunakan service-role key di halaman publik GitHub Pages.</p>
+</main>
+
+<script>
+const fields = [
+  {section:"TOKO & LICENCE", scope:"device-id", ui:"deviceId", label:"Device ID", type:"text", def:"", help:"Apa: ID unik perangkat/toko dan suffix key device. Contoh: infinix_xos_123. Jika kosong/OFF: SAVE DEVICE dan Load device tidak dapat menentukan licence."},
+  {section:"TOKO & LICENCE", scope:"device", ui:"namaToko", json:"toko_name", label:"Nama Toko", type:"text", def:"", help:"Apa: nama toko pada admin/struk. Contoh: Berkah Tiga Puteri Mandirancan. Jika kosong/OFF: identitas toko pada device config dan licence tidak jelas."},
+  {section:"TOKO & LICENCE", scope:"device", ui:"packageId", json:"package_id", label:"Package ID", type:"select", def:"com.btp.uat", options:["com.btp.uat","com.btp.pos"], help:"Apa: applicationId yang diizinkan licence. Contoh: com.btp.uat untuk UAT, com.btp.pos untuk produksi. Jika salah/OFF: build aplikasi dapat ditolak oleh licence check."},
+  {section:"TOKO & LICENCE", scope:"device", ui:"licenceExpiry", json:"expiry", label:"Licence Expiry", type:"date", def:"", help:"Apa: tanggal akhir licence. Contoh: 2026-12-31. Jika kosong/lewat: validasi licence dapat menolak POS."},
+  {section:"TOKO & LICENCE", scope:"device", ui:"maxUser", json:"max_user", label:"Max User", type:"number", def:5, min:1, help:"Apa: batas user untuk licence perangkat. Contoh: 5. Jika 0/OFF: user baru dapat ditolak dan operasi kasir terganggu."},
+  {section:"TOKO & LICENCE", scope:"device", ui:"blocked", json:"blocked", label:"Blocked", type:"checkbox", def:false, help:"Apa: kill-switch licence perangkat. Contoh: ON saat licence harus dihentikan. Jika OFF: perangkat tetap diizinkan selama syarat licence lain valid."},
+  {section:"TOKO & LICENCE", scope:"device", ui:"tokoAddress", json:"address", label:"Address", type:"textarea", def:"", full:true, help:"Apa: alamat toko untuk metadata/struk. Contoh: Jl. Raya Mandirancan No. 10. Jika kosong/OFF: struk dan metadata tidak mempunyai alamat toko."},
+
+  {section:"PAJAK & AKUNTANSI", scope:"global", ui:"ppnRate", json:"ppn_rate", label:"PPN Rate (%)", type:"number", def:11, step:"0.01", help:"Apa: tarif PPN yang dipakai konfigurasi. Contoh: 11. Jika 0/OFF: PPN tidak dihitung oleh flow yang membaca config ini."},
+  {section:"PAJAK & AKUNTANSI", scope:"global", ui:"ppnAccount", json:"ppn_account", label:"PPN Account", type:"text", def:"2-2010", help:"Apa: akun Utang PPN. Contoh: 2-2010. Jika kosong/OFF: posting PPN tidak memiliki akun tujuan yang valid."},
+  {section:"PAJAK & AKUNTANSI", scope:"global", ui:"dppAccount", json:"dpp_account", label:"DPP / Sales Account", type:"text", def:"4-4010", help:"Apa: akun Penjualan untuk DPP setelah diskon. Contoh: 4-4010. Jika kosong/OFF: posting pendapatan penjualan tidak mempunyai akun valid."},
+  {section:"PAJAK & AKUNTANSI", scope:"global", ui:"salesTunaiAccount", json:"sales_tunai_account", label:"Tunai Account", type:"text", def:"1-1010", help:"Apa: akun Kas Tunai. Contoh: 1-1010. Jika kosong/OFF: penerimaan tunai tidak dapat dipetakan ke kas fisik."},
+  {section:"PAJAK & AKUNTANSI", scope:"global", ui:"salesQrisPendingAccount", json:"sales_qris_pending_account", label:"QRIS Pending Account", type:"text", def:"1-1020", help:"Apa: akun QRIS Clearing sebelum settlement. Contoh: 1-1020. Jika kosong/OFF: QRIS pending H+1 tidak mempunyai akun clearing."},
+  {section:"PAJAK & AKUNTANSI", scope:"global", ui:"salesTransferAccount", json:"sales_transfer_account", label:"Transfer Account", type:"text", def:"1-1030", help:"Apa: akun Bank Transfer. Contoh: 1-1030. Jika kosong/OFF: pembayaran transfer tidak memiliki akun penerimaan."},
+  {section:"PAJAK & AKUNTANSI", scope:"global", ui:"selisihKasPlusAccount", json:"selisih_kas_plus_account", label:"Selisih Kas +", type:"text", def:"4-4040", help:"Apa: akun pendapatan selisih kas lebih. Contoh: 4-4040. Jika kosong/OFF: kas lebih saat tutup shift tidak dapat dijurnal sesuai COA."},
+  {section:"PAJAK & AKUNTANSI", scope:"global", ui:"selisihKasMinusAccount", json:"selisih_kas_minus_account", label:"Selisih Kas -", type:"text", def:"6-6020", help:"Apa: akun beban selisih kas kurang. Contoh: 6-6020. Jika kosong/OFF: kas kurang saat tutup shift tidak dapat dijurnal sesuai COA."},
+  {section:"PAJAK & AKUNTANSI", scope:"global", ui:"ppnExemptCategory", json:"ppn_exempt_category", label:"PPN Exempt Category", type:"text", def:"rokok, pulsa, token listrik", help:"Apa: daftar referensi kategori bebas PPN. Contoh: rokok, pulsa, token listrik. Jika kosong/OFF: tidak ada kategori referensi exempt dari setting global."},
+  {section:"PAJAK & AKUNTANSI", scope:"global", ui:"antiDoublePostingTimeout", json:"anti_double_posting_timeout", label:"Anti Double Posting Timeout (detik)", type:"number", def:15, min:0, help:"Apa: jeda proteksi double tap bayar. Contoh: 15 detik. Jika 0/OFF: proteksi UI berkurang; idempotency database tetap harus menjadi boundary utama."},
+
+  {section:"PEMBAYARAN", scope:"global", ui:"tunaiEnabled", json:"tunai_enabled", label:"Tunai Enabled", type:"checkbox", def:true, help:"Apa: mengaktifkan metode pembayaran Tunai. Contoh: ON di toko normal. Jika OFF: opsi Tunai tidak boleh dipakai/ditampilkan oleh client yang membaca config."},
+  {section:"PEMBAYARAN", scope:"global", ui:"qrisEnabled", json:"qris_enabled", label:"QRIS Enabled", type:"checkbox", def:true, help:"Apa: mengaktifkan pembayaran QRIS. Contoh: ON bila toko menerima QRIS. Jika OFF: QRIS tidak boleh dipilih customer/kasir."},
+  {section:"PEMBAYARAN", scope:"global", ui:"transferEnabled", json:"transfer_enabled", label:"Transfer Enabled", type:"checkbox", def:true, help:"Apa: mengaktifkan pembayaran Transfer Bank. Contoh: ON bila transfer diterima. Jika OFF: opsi Transfer harus tidak tersedia."},
+  {section:"PEMBAYARAN", scope:"global", ui:"qrisMdr", json:"qris_mdr", label:"QRIS MDR (%)", type:"number", def:0.7, step:"0.01", min:0, help:"Apa: persentase MDR QRIS. Contoh: 0.7 berarti Rp100.000 gross menjadi Rp99.300 net dan Rp700 biaya. Jika 0/OFF: settlement dianggap tanpa MDR."},
+  {section:"PEMBAYARAN", scope:"global", ui:"qrisSettlementH1", json:"qris_h1", label:"QRIS H+1", type:"checkbox", def:true, help:"Apa: menahan QRIS di clearing sampai settlement H+1. Contoh: ON untuk flow 1-1020 lalu settle ke bank. Jika OFF: QRIS dapat dianggap cair pada hari transaksi."},
+  {section:"PEMBAYARAN", scope:"global", ui:"qrisSqliteV11MigrationDone", json:"qris_sqlite_v11_migration_done", label:"SQLite QRIS v11 Migration Done", type:"checkbox", def:true, help:"Apa: flag administrasi bahwa schema SQLite QRIS v11 tersedia. Contoh: ON pada build UAT yang sudah migrasi. Jika OFF: client dapat menganggap migrasi belum selesai."},
+
+  {section:"HARDWARE", scope:"global", ui:"hardwareMode", json:"hardware_mode", label:"Hardware Mode", type:"select", def:"SIMULATED", options:["SIMULATED","REAL"], help:"Apa: mode integrasi hardware. Contoh: SIMULATED untuk PDF/getar/dialog, REAL untuk perangkat fisik. Jika salah/OFF: flow hardware dapat memanggil driver yang tidak tersedia."},
+  {section:"HARDWARE", scope:"global", ui:"barcodeScannerEnabled", json:"barcode_scanner_enabled", label:"Barcode Scanner Enabled", type:"checkbox", def:true, help:"Apa: mengaktifkan scanner barcode kamera. Contoh: ON untuk scan produk. Jika OFF: kasir harus mencari/input produk tanpa scanner."},
+  {section:"HARDWARE", scope:"global", ui:"printerEnabled", json:"printer_enabled", label:"Printer Enabled", type:"checkbox", def:true, help:"Apa: mengaktifkan output struk. Contoh: ON dengan PDF Preview saat UAT. Jika OFF: transaksi tetap dapat selesai tetapi struk tidak dicetak/preview."},
+  {section:"HARDWARE", scope:"global", ui:"printerType", json:"printer_type", label:"Printer Type", type:"select", def:"PDF Preview", options:["PDF Preview","ESC-POS"], help:"Apa: target printer. Contoh: PDF Preview untuk UAT, ESC-POS untuk printer thermal REAL. Jika salah/OFF: output struk dapat gagal atau menuju driver yang salah."},
+  {section:"HARDWARE", scope:"global", ui:"cashDrawerEnabled", json:"cash_drawer_enabled", label:"Cash Drawer Enabled", type:"checkbox", def:true, help:"Apa: mengaktifkan event pembukaan laci kas. Contoh: ON untuk transaksi tunai. Jika OFF: laci tidak dibuka otomatis."},
+  {section:"HARDWARE", scope:"global", ui:"drawerOpenOnlyFor", json:"drawer_open_only_for", label:"Drawer Open Only For", type:"select", def:"Tunai Only", options:["Tunai Only"], help:"Apa: pembatas metode yang boleh membuka drawer. Contoh: Tunai Only. Jika aturan ini tidak dipakai: QRIS/Transfer berisiko ikut membuka laci."},
+  {section:"HARDWARE", scope:"global", ui:"customerQrDisplayEnabled", json:"customer_qr_display_enabled", label:"Customer QR Display Enabled", type:"checkbox", def:true, help:"Apa: mengaktifkan tampilan QR untuk customer. Contoh: ON saat QRIS aktif. Jika OFF: QR tidak ditampilkan pada customer display/dialog."},
+  {section:"HARDWARE", scope:"global", ui:"customerDisplayType", json:"customer_display_type", label:"Customer Display Type", type:"select", def:"Dialog", options:["None","Dialog","Second Screen"], help:"Apa: cara menampilkan QR/customer view. Contoh: Dialog untuk UAT satu layar. Jika None/OFF: tidak ada customer display khusus."},
+
+  {section:"INVENTORY", scope:"global", ui:"fefoFifoHardBoundary", json:"fefo_fifo_hard_boundary", label:"FEFO/FIFO Hard Boundary", type:"checkbox", def:true, help:"Apa: hard boundary FEFO fisik dan FIFO valuasi. Contoh: ON untuk core audited. Jika OFF: pemilihan lot/valuasi bisa keluar dari aturan inventory yang diwajibkan."},
+  {section:"INVENTORY", scope:"global", ui:"managerPinCanRelax", json:"manager_pin_can_relax", label:"Manager PIN Can Relax", type:"checkbox", def:false, help:"Apa: izin PIN Manager melonggarkan boundary tertentu. Contoh: OFF agar strict. Jika OFF: manager tidak dapat bypass aturan melalui setting ini."},
+  {section:"INVENTORY", scope:"global", ui:"allowNegativeStock", json:"allow_negative_stock", label:"Allow Negative Stock", type:"checkbox", def:false, help:"Apa: izin stok menjadi negatif. Contoh: OFF untuk retail normal. Jika OFF: transaksi yang membuat stok minus harus ditolak kecuali flow override resmi."},
+  {section:"INVENTORY", scope:"global", ui:"lowStockAlertQty", json:"low_stock_alert_qty", label:"Low Stock Alert Qty", type:"number", def:5, min:0, help:"Apa: ambang peringatan stok rendah. Contoh: 5 berarti stok di bawah 5 memicu alert. Jika 0/OFF: peringatan stok rendah praktis tidak aktif."},
+
+  {section:"SHIFT", scope:"global", ui:"shiftImmutableEnabled", json:"shift_immutable", label:"Shift Immutable", type:"checkbox", def:true, help:"Apa: mengunci shift setelah ditutup. Contoh: ON untuk audit. Jika OFF: histori shift berisiko dapat diedit setelah close."},
+  {section:"SHIFT", scope:"global", ui:"varianceJournalSameTx", json:"variance_journal_same_tx", label:"Variance Journal Same Transaction", type:"checkbox", def:true, help:"Apa: jurnal selisih kas disimpan dalam boundary transaksi yang sama dengan close shift. Contoh: ON. Jika OFF: ada risiko close shift dan jurnal variance tidak konsisten saat terjadi kegagalan."},
+  {section:"SHIFT", scope:"global", ui:"autoCloseShiftHour", json:"auto_close_shift_hour", label:"Auto Close Shift Hour", type:"time", def:"23:00", help:"Apa: jam target auto-close/pengingat shift. Contoh: 23:00. Jika kosong/OFF: shift dapat tetap terbuka sampai ditutup manual."},
+
+  {section:"SYNC", scope:"global", ui:"supabaseUrl", json:"supabase_url", label:"Supabase URL", type:"url", def:"", help:"Apa: URL project Supabase LIVE. Contoh: https://xxxx.supabase.co. Jika kosong/OFF: Test Connection, Load, dan SAVE cloud tidak dapat berjalan; localStorage tetap tersedia."},
+  {section:"SYNC", scope:"global", ui:"supabaseAnonKey", json:"supabase_anon_key", label:"Supabase Anon / Publishable Key", type:"password", def:"", help:"Apa: public anon/publishable key untuk browser. Contoh: eyJhbGciOi... Jangan gunakan service-role. Jika kosong/OFF: koneksi LIVE tidak dapat dibuat."},
+  {section:"SYNC", scope:"global", ui:"syncIntervalMinutes", json:"sync_interval_minutes", label:"Sync Interval Minutes", type:"number", def:5, min:1, help:"Apa: interval target sinkronisasi client. Contoh: 5 menit. Jika kosong/OFF: client yang membaca config tidak memiliki interval sync yang valid."},
+  {section:"SYNC", scope:"global", ui:"clientStatusRealtimeEnabled", json:"client_status_realtime_enabled", label:"Client Status Realtime Enabled", type:"checkbox", def:true, help:"Apa: mengaktifkan status client realtime. Contoh: ON untuk dashboard online/offline. Jika OFF: status realtime tidak perlu berlangganan perubahan live."},
+  {section:"SYNC", scope:"global", ui:"githubRepoConfig", json:"github_repo_config", label:"GitHub Repo Config", type:"text", def:"berkah-ajb-dev/Berkahtigaputeri", help:"Apa: referensi repo konfigurasi/admin. Contoh: berkah-ajb-dev/Berkahtigaputeri. Jika kosong/OFF: tidak ada referensi repo untuk backup/operasional admin."}
+];
+
+const sectionOrder = ["TOKO & LICENCE","PAJAK & AKUNTANSI","PEMBAYARAN","HARDWARE","INVENTORY","SHIFT","SYNC"];
+const $ = id => document.getElementById(id);
+let sb = null;
+let sbUrl = "";
+let sbKey = "";
+
+function escapeHtml(value) {
+  return String(value ?? "").replace(/[&<>'"]/g, ch => ({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"}[ch]));
+}
+
+function fieldHtml(f) {
+  const attrs = [f.min != null ? `min="${f.min}"` : "", f.step != null ? `step="${f.step}"` : ""].filter(Boolean).join(" ");
+  let control;
+  if (f.type === "checkbox") {
+    control = `<label class="checkline"><input id="${f.ui}" type="checkbox" ${f.def ? "checked" : ""}> <span>Aktif</span></label>`;
+  } else if (f.type === "select") {
+    control = `<select id="${f.ui}">${f.options.map(v => `<option value="${escapeHtml(v)}" ${v === f.def ? "selected" : ""}>${escapeHtml(v)}</option>`).join("")}</select>`;
+  } else if (f.type === "textarea") {
+    control = `<textarea id="${f.ui}">${escapeHtml(f.def)}</textarea>`;
+  } else {
+    control = `<input id="${f.ui}" type="${f.type}" value="${escapeHtml(f.def)}" ${attrs}>`;
+  }
+  const scopeLabel = f.scope === "global" ? "global" : "device";
+  return `<div class="field ${f.full ? "full" : ""}">
+    <label class="title" for="${f.ui}">${escapeHtml(f.label)} <span class="scope">[${scopeLabel}]</span></label>
+    ${control}
+    <div class="help"><b>(?)</b> ${escapeHtml(f.help)}</div>
+  </div>`;
+}
+
+function render() {
+  if (fields.length !== 43) throw new Error(`Kontrak UI rusak: ${fields.length} fields, harus 43.`);
+  $("fieldCount").textContent = `${fields.length}/43 fields`;
+  $("sections").innerHTML = sectionOrder.map(section => {
+    const rows = fields.filter(f => f.section === section).map(fieldHtml).join("");
+    return `<section><h2>${section}</h2><div class="grid">${rows}</div></section>`;
+  }).join("");
+  loadLocalInitial();
+}
+
+function setStatus(message, kind="") {
+  const el = $("status");
+  el.textContent = message;
+  el.className = `status ${kind}`;
+}
+
+function readField(f) {
+  const el = $(f.ui);
+  if (f.type === "checkbox") return el.checked;
+  if (f.type === "number") return el.value === "" ? null : Number(el.value);
+  return el.value.trim();
+}
+
+function writeField(f, value) {
+  if (value === undefined || value === null) return;
+  const el = $(f.ui);
+  if (f.type === "checkbox") el.checked = Boolean(value);
+  else el.value = String(value);
+}
+
+function deviceId() {
+  return $("deviceId").value.trim();
+}
+
+function globalPayload() {
+  return Object.fromEntries(fields.filter(f => f.scope === "global").map(f => [f.json, readField(f)]));
+}
+
+function devicePayload() {
+  return Object.fromEntries(fields.filter(f => f.scope === "device").map(f => [f.json, readField(f)]));
+}
+
+function applyGlobal(payload) {
+  if (!payload || typeof payload !== "object") return;
+  for (const f of fields.filter(x => x.scope === "global")) writeField(f, payload[f.json]);
+}
+
+function applyDevice(id, payload) {
+  if (id) $("deviceId").value = id;
+  if (!payload || typeof payload !== "object") return;
+  for (const f of fields.filter(x => x.scope === "device")) writeField(f, payload[f.json]);
+}
+
+function localSaveGlobal() {
+  const payload = globalPayload();
+  localStorage.setItem("global", JSON.stringify(payload));
+  localStorage.setItem("btp:supabase_url", payload.supabase_url || "");
+  localStorage.setItem("btp:supabase_anon_key", payload.supabase_anon_key || "");
+  return payload;
+}
+
+function localSaveDevice() {
+  const id = deviceId();
+  if (!id) throw new Error("Device ID wajib diisi.");
+  const payload = devicePayload();
+  localStorage.setItem(`device:${id}`, JSON.stringify(payload));
+  localStorage.setItem("btp:last_device_id", id);
+  return {id, payload};
+}
+
+function safeJson(value) {
+  try { return JSON.parse(value); } catch (_) { return null; }
+}
+
+function loadLocalInitial() {
+  const g = safeJson(localStorage.getItem("global"));
+  if (g) applyGlobal(g);
+  const savedUrl = localStorage.getItem("btp:supabase_url");
+  const savedKey = localStorage.getItem("btp:supabase_anon_key");
+  if (savedUrl && !$("supabaseUrl").value) $("supabaseUrl").value = savedUrl;
+  if (savedKey && !$("supabaseAnonKey").value) $("supabaseAnonKey").value = savedKey;
+  const id = localStorage.getItem("btp:last_device_id") || "";
+  if (id) {
+    const d = safeJson(localStorage.getItem(`device:${id}`));
+    applyDevice(id, d);
+  }
+}
+
+function makeClient() {
+  const url = $("supabaseUrl").value.trim();
+  const key = $("supabaseAnonKey").value.trim();
+  if (!url || !key) throw new Error("Supabase URL dan Anon/Publishable Key wajib diisi untuk LIVE cloud.");
+  localStorage.setItem("btp:supabase_url", url);
+  localStorage.setItem("btp:supabase_anon_key", key);
+  if (!sb || sbUrl !== url || sbKey !== key) {
+    sb = window.supabase.createClient(url, key, {auth:{persistSession:true, autoRefreshToken:true}});
+    sbUrl = url;
+    sbKey = key;
+  }
+  return sb;
+}
+
+async function ensureAdmin(forceLogin=false) {
+  const client = makeClient();
+  if (!forceLogin) {
+    const {data:{session}, error} = await client.auth.getSession();
+    if (error) throw error;
+    if (session) return client;
+  }
+  const email = $("adminEmail").value.trim();
+  const password = $("adminPassword").value;
+  if (!email || !password) throw new Error("Login Admin diperlukan: isi Admin Email + Password (RLS owner/admin).");
+  const {data, error} = await client.auth.signInWithPassword({email, password});
+  if (error) throw error;
+  if (!data.session) throw new Error("Session admin tidak terbentuk.");
+  return client;
+}
+
+async function loginAdmin() {
+  setStatus("Login admin...");
+  try {
+    const client = await ensureAdmin(true);
+    const {data:{user}} = await client.auth.getUser();
+    $("adminPassword").value = "";
+    setStatus(`Login Admin OK\n${user?.email || "authenticated"}\nSession disimpan oleh Supabase Auth; password tidak disimpan.`, "ok");
+  } catch (error) {
+    setStatus(`Login Admin gagal: ${error.message}`, "bad");
+  }
+}
+
+async function testConnection() {
+  setStatus("Testing licences + app_config LIVE...");
+  try {
+    const client = await ensureAdmin();
+    const [lic, cfg] = await Promise.all([
+      client.from("licences").select("device_id").limit(1),
+      client.from("app_config").select("key,value,updated_at").limit(1)
+    ]);
+    const lines = [];
+    if (lic.error) lines.push(`licences: FAIL - ${lic.error.message}`); else lines.push("licences: LIVE OK");
+    if (cfg.error) lines.push(`app_config: FAIL - ${cfg.error.message}`); else lines.push("app_config: LIVE OK");
+    const ok = !lic.error && !cfg.error;
+    setStatus(lines.join("\n"), ok ? "ok" : "bad");
+  } catch (error) {
+    setStatus(`Test Connection gagal: ${error.message}`, "bad");
+  }
+}
+
+function licenceRow(id, payload) {
+  return {
+    device_id: id,
+    toko_name: payload.toko_name,
+    package_id: payload.package_id,
+    expiry_date: payload.expiry,
+    max_user: payload.max_user,
+    is_blocked: payload.blocked,
+    address: payload.address
+  };
+}
+
+async function upsertGlobal(client, payload) {
+  const row = {key:"global", value:payload, updated_at:new Date().toISOString()};
+  const {error} = await client.from("app_config").upsert(row, {onConflict:"key"});
+  if (error) throw new Error(`app_config global: ${error.message}`);
+}
+
+async function upsertDevice(client, id, payload) {
+  const configRow = {key:`device:${id}`, value:payload, updated_at:new Date().toISOString()};
+  const {error: configError} = await client.from("app_config").upsert(configRow, {onConflict:"key"});
+  if (configError) throw new Error(`app_config device:${id}: ${configError.message}`);
+  const {error: licenceError} = await client.from("licences").upsert(licenceRow(id, payload), {onConflict:"device_id"});
+  if (licenceError) throw new Error(`licences ${id}: ${licenceError.message}`);
+}
+
+async function saveGlobal() {
+  const payload = localSaveGlobal();
+  setStatus("Global tersimpan ke localStorage. Menyimpan ke app_config LIVE...");
+  try {
+    const client = await ensureAdmin();
+    await upsertGlobal(client, payload);
+    setStatus("SAVE GLOBAL OK\nlocalStorage: global\nLIVE: app_config key='global'", "ok");
+  } catch (error) {
+    setStatus(`SAVE GLOBAL cloud gagal: ${error.message}\nFallback localStorage 'global' tetap tersimpan.`, "bad");
+  }
+}
+
+async function saveDevice() {
+  let snapshot;
+  try { snapshot = localSaveDevice(); }
+  catch (error) { setStatus(error.message, "bad"); return; }
+  setStatus(`Device tersimpan ke localStorage device:${snapshot.id}. Menyimpan LIVE...`);
+  try {
+    const client = await ensureAdmin();
+    await upsertDevice(client, snapshot.id, snapshot.payload);
+    setStatus(`SAVE DEVICE OK\nlocalStorage: device:${snapshot.id}\nLIVE: app_config key='device:${snapshot.id}' + licences`, "ok");
+  } catch (error) {
+    setStatus(`SAVE DEVICE cloud gagal: ${error.message}\nFallback localStorage 'device:${snapshot.id}' tetap tersimpan.`, "bad");
+  }
+}
+
+async function saveBoth() {
+  let g, d;
+  try {
+    g = localSaveGlobal();
+    d = localSaveDevice();
+  } catch (error) {
+    setStatus(error.message, "bad");
+    return;
+  }
+  setStatus("Global + device tersimpan lokal. Menyimpan app_config + licences LIVE...");
+  try {
+    const client = await ensureAdmin();
+    const now = new Date().toISOString();
+    const rows = [
+      {key:"global", value:g, updated_at:now},
+      {key:`device:${d.id}`, value:d.payload, updated_at:now}
+    ];
+    const {error: configError} = await client.from("app_config").upsert(rows, {onConflict:"key"});
+    if (configError) throw new Error(`app_config: ${configError.message}`);
+    const {error: licenceError} = await client.from("licences").upsert(licenceRow(d.id, d.payload), {onConflict:"device_id"});
+    if (licenceError) throw new Error(`licences: ${licenceError.message}`);
+    setStatus(`SAVE BOTH OK\nLIVE: global + device:${d.id} + licences\nFallback lokal juga tersimpan.`, "ok");
+  } catch (error) {
+    setStatus(`SAVE BOTH cloud gagal: ${error.message}\nFallback localStorage global + device:${d.id} tetap tersimpan.`, "bad");
+  }
+}
+
+async function loadFromCloud() {
+  const id = deviceId();
+  if (!id) {
+    setStatus("Isi Device ID sebelum Load from Cloud.", "bad");
+    return;
+  }
+  setStatus(`Loading LIVE global + device:${id}...`);
+  try {
+    const client = await ensureAdmin();
+    const [g, d] = await Promise.all([
+      client.from("app_config").select("key,value,updated_at").eq("key","global").maybeSingle(),
+      client.from("app_config").select("key,value,updated_at").eq("key",`device:${id}`).maybeSingle()
+    ]);
+    if (g.error) throw new Error(`global: ${g.error.message}`);
+    if (d.error) throw new Error(`device:${id}: ${d.error.message}`);
+    if (!g.data && !d.data) throw new Error("Tidak ada row global maupun device di app_config.");
+    if (g.data?.value) {
+      applyGlobal(g.data.value);
+      localStorage.setItem("global", JSON.stringify(g.data.value));
+    }
+    if (d.data?.value) {
+      applyDevice(id, d.data.value);
+      localStorage.setItem(`device:${id}`, JSON.stringify(d.data.value));
+      localStorage.setItem("btp:last_device_id", id);
+    }
+    setStatus(`Load from Cloud OK\nglobal: ${g.data ? "FOUND" : "NOT FOUND"}\ndevice:${id}: ${d.data ? "FOUND" : "NOT FOUND"}`, "ok");
+  } catch (error) {
+    const localGlobal = safeJson(localStorage.getItem("global"));
+    const localDevice = safeJson(localStorage.getItem(`device:${id}`));
+    if (localGlobal) applyGlobal(localGlobal);
+    if (localDevice) applyDevice(id, localDevice);
+    setStatus(`Load cloud gagal: ${error.message}\nFallback localStorage global: ${localGlobal ? "LOADED" : "NOT FOUND"}\nFallback device:${id}: ${localDevice ? "LOADED" : "NOT FOUND"}`, localGlobal || localDevice ? "ok" : "bad");
+  }
+}
+
+function exportJson() {
+  const currentId = deviceId();
+  const devices = {};
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    if (!key || !key.startsWith("device:")) continue;
+    const value = safeJson(localStorage.getItem(key));
+    if (value) devices[key.slice(7)] = value;
+  }
+  if (currentId) devices[currentId] = devicePayload();
+  const payload = {global: globalPayload(), devices};
+  const blob = new Blob([JSON.stringify(payload, null, 2)], {type:"application/json"});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `berkah-pos-admin-${currentId || "config"}.json`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  setStatus(`Export JSON OK\nShape: { global, devices }\nDevices exported: ${Object.keys(devices).length}`, "ok");
+}
+
+render();
+</script>
+</body>
+</html>
