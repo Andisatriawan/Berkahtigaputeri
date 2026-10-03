@@ -1,7 +1,9 @@
 name: Deploy btp-admin to GitHub Pages
 on:
   push:
-    branches: [feat/simulated-hardware-supabase-admin-a19cb3f]
+    branches:
+      - main
+      - feat/simulated-hardware-supabase-admin-a19cb3f
   workflow_dispatch:
 permissions:
   contents: read
@@ -15,11 +17,16 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: feat/simulated-hardware-supabase-admin-a19cb3f
       - uses: actions/configure-pages@v4
+        with:
+          enablement: true
+      - name: Prepare Pages artifact with /btp-admin/ path
+        run: |
+          rm -rf _site
+          mkdir -p _site/btp-admin
+          cp -a btp-admin/. _site/btp-admin/
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: btp-admin/
+          path: _site/
       - id: deployment
         uses: actions/deploy-pages@v4
