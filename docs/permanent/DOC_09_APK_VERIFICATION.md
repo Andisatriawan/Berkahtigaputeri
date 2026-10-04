@@ -1,149 +1,194 @@
-# DOC_09 - APK VERIFICATION P6
+# DOC_09 - APK / CONFIG VERIFICATION CURRENT
 
-Status target: P6 APK membaca config canonical 3 layer + feature flag layanan.
+Status: **CURRENT CODE CONTRACT / PHASE 7 RE-CERTIFICATION**
 
-## Implementasi
+Flutter app: `pos-app/`
 
-Flutter app berada di `pos-app/`.
+## Current runtime entry surface
 
-File P6:
-- `lib/core/config/config_service.dart` - RPC `get_effective_config`, fallback SELECT `app_config`, merge canonical, cache offline.
-- `lib/core/config/app_identity_store.dart` - persist `tenant_id` dan `device_id`.
-- `lib/features/home/home_screen.dart` - selector tenant UAT, MDR efektif, menu POS/Akuntansi berdasarkan `tenants.features`.
-- `lib/main.dart` - Supabase client menggunakan Publishable Key, bukan service-role key.
-- `test/config/config_service_test.dart` - test urutan merge dan feature flag clientA/clientB.
+`lib/main.dart` opens `HomeScreen`.
 
-Urutan merge canonical:
+The current HomeScreen is a UAT/configuration screen. It provides:
+
+- tenant selector;
+- device ID input;
+- config refresh;
+- source status (`LIVE SUPABASE` / `CACHE OFFLINE`);
+- effective POS MDR;
+- POS/Akuntansi availability cards.
+
+The cards are informational in the current entry UI. They do not navigate into cashier checkout, QRIS transaction, or PPN-report screens.
+
+## Canonical effective-config order
+
+The current Final Pos merge order is five levels:
 
 ```text
-GLOBAL <- TENANT <- SERVICE <- DEVICE
+GLOBAL <- TEMPLATE <- TENANT <- SERVICE <- DEVICE
 ```
 
-Key yang dibaca untuk POS:
+For one `(tenant_id, device_id, service)` request the keyset is:
 
 ```text
 global
+template:<tenant.template_id>
 tenant:<tenant_id>
-tenant:<tenant_id>:service:pos
+tenant:<tenant_id>:service:<service>
 device:<device_id>
 ```
 
-APK mencoba RPC terlebih dahulu:
+TEMPLATE is resolved from the tenant row using:
+
+```text
+template_id
+```
+
+with legacy compatibility for:
+
+```text
+template
+```
+
+The resolved template ID is normalized to uppercase.
+
+Only the requested service participates in the effective configuration. POS and Akuntansi are not merged together.
+
+## ConfigService behavior
+
+`lib/core/config/config_service.dart` tries:
 
 ```text
 get_effective_config(p_tenant, p_device, p_service)
 ```
 
-Jika RPC gagal tetapi Data API masih dapat diakses, APK fallback ke SELECT `app_config` dan merge lokal dengan urutan yang sama. Jika jaringan/Data API tidak tersedia, hasil terakhir dibaca dari SharedPreferences cache.
+first.
 
-## Supabase LIVE verification
-
-RPC dibuat pada project staging yang sama dengan btp-admin.
-
-Manual rebuild instruction:
-
-> Copy paste `docs/permanent/DOC_08_RPC_EFFECTIVE_CONFIG.sql` di Supabase SQL Editor dan Run.
-
-Test SQL:
-
-```sql
-SELECT get_effective_config('berkah_sumber','infinix_xos_123','pos');
-```
-
-Evidence yang sudah diverifikasi:
+If that RPC call fails, the fallback SELECT path resolves the same five keys and merges them in the same order:
 
 ```text
-berkah_sumber POS MDR = 0.7
-clientA       POS MDR = 0.5
-clientB       POS MDR = 0.7
-
-clientA features = {pos:true, akuntansi:false}
-clientB features = {pos:true, akuntansi:true}
+GLOBAL
+TEMPLATE
+TENANT
+requested SERVICE
+DEVICE
 ```
 
-RPC juga diuji sebagai role `anon`; `clientA` mengembalikan MDR `0.5`. RLS tetap menolak write anonim.
+The `inherited_from_template` compatibility rule on a service row removes service-level MDR aliases so the template MDR remains authoritative where intended.
 
-## Test clientA
-
-1. Jalankan app.
-2. Pada `Settings / Tenant UAT`, pilih `clientA`.
-3. Device UAT: `infinix_xos_123`.
-4. Refresh config.
-5. Expected:
-   - status `LIVE SUPABASE` saat online;
-   - `MDR efektif POS: 0.5%`;
-   - menu `POS` terlihat;
-   - menu `Akuntansi` tidak dirender.
-
-Log expected:
-
-```text
-tenant=clientA
-service=pos
-mdr=0.5
-features.pos=true
-features.akuntansi=false
-```
-
-## Test clientB
-
-1. Pilih `clientB`.
-2. Refresh config.
-3. Expected:
-   - `MDR efektif POS: 0.7%`;
-   - menu `POS` terlihat;
-   - menu `Akuntansi` terlihat.
-
-Log expected:
-
-```text
-tenant=clientB
-service=pos
-mdr=0.7
-features.pos=true
-features.akuntansi=true
-```
-
-## Test offline cache
-
-1. Saat online, pilih `clientA` dan tunggu config sukses.
-2. Aktifkan airplane mode.
-3. Restart/reload screen.
-4. Expected: status `CACHE OFFLINE`, MDR tetap `0.5%`, menu Akuntansi tetap hilang.
-5. Ulangi untuk `clientB`; expected MDR `0.7%` dan Akuntansi tetap terlihat.
+If remote access fails completely, the last effective config may be read from SharedPreferences cache.
 
 Cache key:
 
 ```text
 p6.effective.<tenant>.<device>.<service>
+```
+
+## Feature flags
+
+Final Pos feature flags are sourced from `app_config`.
+
+Feature resolution reads:
+
+```text
+global
+template:<tenant.template_id>
+tenant:<tenant_id>
+```
+
+and then reads `features` or the supported flat feature aliases from that effective value.
+
+The old `tenants.features` path is deprecated and remains only as a warning-emitting legacy fallback:
+
+```dart
+// DEPRECATED: tenants.features removed, Final Pos uses app_config
+```
+
+Feature cache key:
+
+```text
 p6.features.<tenant>
 ```
 
-## Screenshot / runtime log
+## RLS/auth contract
 
-Untuk acceptance device, ambil screenshot berikut:
-- `clientA`: header tenant + `MDR efektif POS: 0.5%` + hanya menu POS.
-- `clientB`: header tenant + `MDR efektif POS: 0.7%` + menu POS dan Akuntansi.
-- airplane mode: badge/status `CACHE OFFLINE`.
+The Phase 5 backend contract no longer allows anonymous Final Pos config/identity reads.
 
-Pada eksekusi P6 ini runtime Android belum dapat dibuktikan di emulator karena repository hanya memiliki `pos-app/android/app/build.gradle`; `AndroidManifest.xml`, MainActivity, root Gradle/settings dan Gradle wrapper tidak ada. Kode Flutter P6 dan database/RPC dapat diverifikasi, tetapi screenshot APK installable harus dilakukan setelah Android scaffolding dipulihkan/digenerate.
+`get_effective_config(...)` requires an authenticated caller and validates:
 
-## Anti-tabrakan tenant
+1. the requested device exists;
+2. the device belongs to the requested tenant;
+3. a normal authenticated caller owns the device through `devices.user_id`.
 
-APK tidak mengambil `tenant_id` dari JSON effective sebagai identitas session. Identitas tenant berasal dari `AppIdentityStore`. Ini penting saat satu device UAT dipakai bergantian untuk `berkah_sumber`, `clientA`, dan `clientB`.
+The canonical super admin is authenticated separately and retains its explicit management policy, but the RPC still requires a valid device-to-tenant pair.
 
-MDR tetap tenant-scoped:
+Direct fallback SELECTs are also subject to RLS and therefore require an authenticated session.
+
+### Current entry-point limitation
+
+`lib/main.dart` constructs `SupabaseClient` with the publishable key but does not itself perform sign-in or provision an authenticated device session.
+
+Therefore Phase 7 does **not** claim that a fresh install can reach live authenticated config merely by launching the current HomeScreen. Device-auth provisioning/session wiring must exist before the Phase 5 RLS contract can succeed online.
+
+Offline cache may only help after a compatible value has previously been cached.
+
+## TEMPLATE parity
+
+The five-level model is aligned across:
 
 ```text
-tenant:clientA:service:pos -> 0.5%
-tenant:clientB:service:pos -> 0.7%
+Flutter ConfigService
+btp-admin/editor-core.js
+public.get_effective_config(...)
 ```
 
-## Pages regression
+All three include TEMPLATE before TENANT.
 
-P6 tidak mengubah file di `btp-admin/` dan tidak mengubah `.github/workflows/pages.yml`.
+This supersedes the historical `GLOBAL <- TENANT <- SERVICE <- DEVICE` wording.
 
-Setelah commit P6, workflow `Deploy btp-admin to GitHub Pages` harus tetap SUCCESS dan artifact harus tetap memuat:
-- `btp-admin/clients.html`
-- `btp-admin/edit.html`
-- `btp-admin/history.html`
+## Current UAT values in HomeScreen
+
+The current HomeScreen still exposes historical UAT tenant labels:
+
+```text
+berkah_sumber
+clientA
+clientB
+```
+
+and documents `infinix_xos_123` as its default UAT device helper.
+
+Those labels are part of the current UI implementation; they are not the canonical 352-key workbook naming scheme. The canonical workbook uses the Final Pos inventory governed by `APP_CONFIG_EXPORT`.
+
+## Verification commands
+
+Repository CI runs:
+
+```text
+flutter analyze
+flutter test
+flutter build appbundle --release
+```
+
+The workbook validation command is:
+
+```text
+python3 scripts/sync_excel_to_supabase.py --dry-run
+```
+
+Canonical workbook inventory:
+
+```text
+1 global + 3 template + 100 tenant + 140 service + 108 device = 352
+```
+
+## Release-note boundary
+
+Current Play Store release notes may claim the UAT/configuration viewer and status information reachable from HomeScreen.
+
+They must not claim, as current reachable release UX:
+
+- offline cashier checkout;
+- QRIS transaction flow;
+- PPN report flow.
+
+Those capabilities are not reachable from the current HomeScreen entry path.

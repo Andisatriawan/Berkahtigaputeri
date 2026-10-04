@@ -14,7 +14,7 @@
 /btp-admin/
   index.html (redirect ke clients.html)
   clients.html (Super Admin List - Prioritas 3)
-  edit.html (Form 43 fields dengan 3 layer - Prioritas 3)
+  edit.html (Form 43 fields dengan Final Pos effective config)
   login.html (Supabase Auth - Prioritas 2)
 ```
 
@@ -35,34 +35,36 @@ Tenant berkah_sumber:
   tenant:berkah_sumber:service:pos {qris_enabled:true, transfer_enabled:false}
   tenant:berkah_sumber:service:akuntansi {auto_jurnal:true}
 
-APK com.btp.uat baca:
-```dart
-final posConfig = await supabase.from('app_config').select().eq('key','tenant:berkah_sumber:service:pos').single();
-final akConfig = await supabase.from('app_config').select().eq('key','tenant:berkah_sumber:service:akuntansi').single();
-if (posConfig['value']['qris_enabled']) showQRIS();
-if (akConfig['value']['auto_jurnal']) enableJurnal();
+Canonical effective-config runtime tidak menggabungkan kedua service tersebut. Satu request hanya memakai service yang diminta:
+
+```text
+GLOBAL -> TEMPLATE -> TENANT -> SERVICE(requested) -> DEVICE
 ```
 
-## Prioritas Eksekusi Tanpa Berhenti
+## Prioritas Eksekusi / Tabel Inti
 
-### PRIORITAS 1: Fondasi (HARI INI)
-- [ ] Jalankan DOC_02_SUPABASE_SCHEMA_V1.sql di Supabase SQL Editor
-- [ ] Verifikasi 4 tabel ada: tenants, devices, licences, app_config, config_history
-- [ ] Cek select * from app_config -> harus ada 5 rows: global, tenant:berkah_sumber, tenant:berkah_sumber:service:pos, tenant:berkah_sumber:service:akuntansi, device:infinix_xos_123
-- [ ] Update btp-admin/index.html yang LIVE untuk baca dari 3 layer (bukan 1 layer lama)
+Verifikasi **6 tabel** Final Pos/config utama ada:
 
-### PRIORITAS 2: Keamanan (Besok)
-- [ ] Jalankan DOC_03_RLS_AUTH.sql
-- [ ] Buat user super admin di Supabase Auth
-- [ ] Test anon tidak bisa write, authenticated bisa
+```text
+tenants
+devices
+licences
+app_config
+config_history
+tenant_services
+```
 
-### PRIORITAS 3: Scale (Lusa)
-- [ ] Buat btp-admin/clients.html
-- [ ] Buat btp-admin/edit.html
+`app_config` canonical workbook-owned mempunyai tepat 352 key:
 
-Setiap prioritas harus LIVE dan screenshot verifikasi baru lanjut.
+```text
+1 global + 3 template + 100 tenant + 140 service + 108 device
+```
+
+Admin normal config replacement menggunakan `update_app_config_atomic(key, new_value, expected_version)` agar version increment bersifat atomic.
 
 ## Catatan Permanen
-- Jangan hapus DOC_00-04, akumulasi
-- Semua SQL harus idempotent (if not exists, on conflict do nothing) agar bisa rerun tanpa error
-- Version di JSONB harus increment setiap save untuk deteksi tabrakan
+
+- Jangan hapus dokumen permanen; verification lama harus dipindah/ditandai historical.
+- Semua SQL rerunnable tidak boleh menurunkan version config yang lebih baru.
+- Version JSONB dikelola oleh atomic RPC untuk normal replacement.
+- TEMPLATE adalah layer canonical dan tidak boleh dihilangkan dari effective config.
