@@ -1,65 +1,38 @@
 # Kebijakan Privasi — Berkah Tiga Puteri POS
 
-Berlaku mulai: 29 September 2026
+Berlaku untuk build Final Pos UAT saat ini.
 
-Kebijakan Privasi ini menjelaskan cara aplikasi Berkah Tiga Puteri POS ("Aplikasi") menangani data ketika digunakan untuk kegiatan kasir, pencatatan transaksi, persediaan, shift, pembayaran, dan laporan usaha.
+Build yang sekarang dibuka dari `main.dart` adalah HomeScreen konfigurasi/verification. UI reachable menyediakan pemilihan tenant/device, status Supabase/config source, refresh konfigurasi, preview konfigurasi efektif, dan status layanan POS/Akuntansi. HomeScreen belum membuka alur checkout kasir, transaksi QRIS, atau laporan PPN.
 
-## 1. Data yang Diproses
+## Data yang diproses
 
-Aplikasi dapat memproses data yang diperlukan untuk menjalankan fungsi POS, termasuk:
+Untuk fungsi UAT/config, aplikasi dapat memproses tenant ID, device ID, konfigurasi efektif, status layanan, status sinkronisasi, dan data autentikasi yang diperlukan apabila sesi perangkat diprovisikan.
 
-- data akun pengguna, seperti alamat email atau pengenal akun apabila fitur autentikasi digunakan;
-- data usaha, produk, stok, shift kasir, dan transaksi penjualan;
-- data pembayaran yang dicatat oleh pengguna, termasuk metode pembayaran seperti tunai, QRIS, atau transfer;
-- data akuntansi dan laporan, termasuk nilai penjualan, diskon, PPN, dan harga pokok penjualan;
-- data teknis yang diperlukan untuk sinkronisasi, keamanan, dan pencegahan transaksi ganda.
+Modul repository lain dapat menangani data POS/akuntansi, tetapi kebijakan rilis harus selalu disesuaikan dengan fitur dan data yang benar-benar reachable pada build yang dipublikasikan.
 
-Aplikasi tidak memerlukan pengguna untuk memasukkan PIN, kata sandi perbankan, nomor kartu penuh, CVV, atau kredensial pembayaran sensitif ke dalam catatan transaksi.
+## Supabase dan keamanan akses
 
-## 2. Tujuan Penggunaan Data
+Aplikasi menggunakan Supabase sebagai backend. Data yang dikirim ke backend menggunakan HTTPS/TLS.
 
-Data digunakan hanya untuk menyediakan dan mengoperasikan fungsi Aplikasi, termasuk:
+Final Pos tidak menyediakan anonymous read untuk data konfigurasi tenant:
 
-- memproses dan menyimpan transaksi POS;
-- mengelola produk, stok, dan shift kasir;
-- menyinkronkan transaksi yang dibuat saat offline;
-- menghasilkan laporan usaha dan PPN;
-- menjaga integritas, keamanan, pencadangan, dan konsistensi data.
+- role `anon` tidak mempunyai direct SELECT pada tabel Final Pos (`tenants`, `devices`, `licences`, `app_config`, `tenant_services`);
+- role `anon` tidak dapat menjalankan `get_effective_config(...)`;
+- akses cloud effective-config memerlukan sesi authenticated;
+- pengguna/perangkat authenticated normal dibatasi ke device yang dimiliki melalui `devices.user_id = auth.uid()`;
+- RPC memvalidasi device tersebut berada pada tenant yang diminta;
+- `service_role` hanya digunakan pada proses server/administratif yang dipercaya dan tidak boleh ditanamkan di APK.
 
-## 3. Penyimpanan Data
+Publishable key Supabase bukan kredensial untuk membaca data tenant secara anonim.
 
-Data lokal dapat disimpan pada perangkat agar fungsi kasir offline dapat berjalan.
+## Penjualan dan pembagian data
 
-Data yang disinkronkan ke layanan cloud disimpan menggunakan Supabase sebagai layanan backend dan penyimpanan data. Pengiriman data ke layanan backend harus menggunakan koneksi terenkripsi yang disediakan oleh layanan tersebut.
+Kami tidak menjual data pengguna dan tidak membagikannya untuk periklanan atau pemasaran. Supabase dapat memproses data sebagai penyedia layanan teknis sejauh diperlukan untuk menyediakan backend aplikasi.
 
-Retensi data mengikuti kebutuhan operasional usaha dan konfigurasi aplikasi. Pemilik usaha bertanggung jawab memastikan bahwa data yang dimasukkan ke dalam Aplikasi memiliki dasar penggunaan yang sesuai.
+## Retensi, koreksi, dan penghapusan
 
-## 4. Penjualan dan Pembagian Data
+Retensi mengikuti kebutuhan operasional dan kewajiban yang berlaku. Sebelum rilis produksi, pengelola aplikasi harus mempublikasikan kanal kontak aktif untuk permintaan privasi, koreksi, dan penghapusan data.
 
-Kami tidak menjual data pribadi pengguna.
+## Perubahan kebijakan
 
-Kami tidak membagikan data pengguna kepada pihak ketiga untuk tujuan periklanan atau pemasaran lintas layanan.
-
-Penyedia infrastruktur seperti Supabase dapat memproses data hanya sejauh diperlukan untuk menyediakan layanan teknis yang digunakan Aplikasi dan tunduk pada ketentuan serta kebijakan privasi penyedia tersebut.
-
-## 5. Keamanan
-
-Aplikasi dirancang untuk membatasi pemrosesan data pada kebutuhan fungsi POS dan akuntansi. Pengguna tetap bertanggung jawab menjaga keamanan perangkat, akun, dan kredensial yang digunakan untuk mengakses Aplikasi.
-
-## 6. Hak dan Penghapusan Data
-
-Pengguna dapat meminta koreksi atau penghapusan data yang berada di bawah pengelolaan layanan aplikasi, sepanjang tidak bertentangan dengan kewajiban penyimpanan catatan usaha atau hukum yang berlaku.
-
-Sebelum publikasi di Google Play, pengelola Aplikasi harus menyediakan kanal kontak yang aktif untuk permintaan privasi dan penghapusan data.
-
-## 7. Data Anak
-
-Aplikasi ditujukan untuk kegiatan operasional usaha dan bukan dirancang sebagai layanan yang ditujukan khusus kepada anak.
-
-## 8. Perubahan Kebijakan
-
-Kebijakan ini dapat diperbarui apabila fungsi Aplikasi, penyedia layanan, atau persyaratan hukum berubah. Versi terbaru harus dipublikasikan melalui kanal resmi Aplikasi.
-
-## 9. Kontak
-
-Sebelum rilis produksi, pengelola Aplikasi harus mengisi dan mempublikasikan alamat kontak privasi resmi pada halaman Google Play dan halaman kebijakan privasi yang dapat diakses publik.
+Kebijakan ini harus diperbarui sebelum build baru mengaktifkan pengumpulan atau UI baru seperti checkout kasir, transaksi QRIS, laporan PPN, analytics, crash reporting, iklan, atau SDK pihak ketiga lain yang mengubah praktik data.

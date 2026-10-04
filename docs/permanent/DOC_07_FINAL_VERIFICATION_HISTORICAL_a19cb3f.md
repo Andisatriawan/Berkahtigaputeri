@@ -1,3 +1,5 @@
+# HISTORICAL - certified old 3-layer a19cb3f, NOT current Final Pos
+
 # DOC_07 - FINAL VERIFICATION P1-P5
 
 Status: **FINAL GREEN / main / 2026-10-04**

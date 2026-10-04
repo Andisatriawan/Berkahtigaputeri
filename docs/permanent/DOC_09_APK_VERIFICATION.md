@@ -1,194 +1,129 @@
-# DOC_09 - APK / CONFIG VERIFICATION CURRENT
+# DOC_09 — APK / CONFIG VERIFICATION CURRENT
 
-Status: **CURRENT CODE CONTRACT / PHASE 7 RE-CERTIFICATION**
+Status: **CURRENT FINAL POS CODE CONTRACT / PHASE 7**
 
 Flutter app: `pos-app/`
 
-## Current runtime entry surface
+## Current entry surface
 
-`lib/main.dart` opens `HomeScreen`.
+`lib/main.dart` constructs the Supabase client and opens `HomeScreen`.
 
-The current HomeScreen is a UAT/configuration screen. It provides:
+Current HomeScreen provides a UAT/configuration surface:
 
-- tenant selector;
+- tenant selection;
 - device ID input;
 - config refresh;
-- source status (`LIVE SUPABASE` / `CACHE OFFLINE`);
-- effective POS MDR;
+- Supabase/config source status;
+- effective POS MDR preview;
 - POS/Akuntansi availability cards.
 
-The cards are informational in the current entry UI. They do not navigate into cashier checkout, QRIS transaction, or PPN-report screens.
+The service cards are informational. They do not navigate into cashier checkout, QRIS transaction, or PPN-report screens.
 
 ## Canonical effective-config order
 
-The current Final Pos merge order is five levels:
+`config_service.dart` is already aligned with the Final Pos architecture:
 
 ```text
-GLOBAL <- TEMPLATE <- TENANT <- SERVICE <- DEVICE
+GLOBAL → TEMPLATE → TENANT → SERVICE → DEVICE
 ```
 
-For one `(tenant_id, device_id, service)` request the keyset is:
+For one `(tenant_id, device_id, requested_service)` request, the keyset is:
 
 ```text
 global
 template:<tenant.template_id>
 tenant:<tenant_id>
-tenant:<tenant_id>:service:<service>
+tenant:<tenant_id>:service:<requested_service>
 device:<device_id>
 ```
 
-TEMPLATE is resolved from the tenant row using:
+Only the requested service participates. POS and Akuntansi are not merged together.
+
+Later layers replace earlier fields at the top JSON-object level. This matches classic Admin `Object.assign` semantics and PostgreSQL `jsonb ||` semantics.
+
+## TEMPLATE and MDR inheritance
+
+TEMPLATE is a mandatory runtime layer. Template ID is resolved from tenant configuration and normalized to uppercase (`BASIC`, `PRO`, `ENTERPRISE`).
+
+If a service row has non-empty `inherited_from_template`, `config_service.dart` removes the service MDR aliases:
 
 ```text
-template_id
+mdr
+mdr_pos
+qris_mdr
+mdr_%
 ```
 
-with legacy compatibility for:
+before merging, preserving the inherited template MDR.
 
-```text
-template
-```
+## RPC first, fallback parity
 
-The resolved template ID is normalized to uppercase.
-
-Only the requested service participates in the effective configuration. POS and Akuntansi are not merged together.
-
-## ConfigService behavior
-
-`lib/core/config/config_service.dart` tries:
+`ConfigService.getEffectiveConfig()` first calls:
 
 ```text
 get_effective_config(p_tenant, p_device, p_service)
 ```
 
-first.
+The fallback SELECT path resolves the same five service-specific keys and applies the same merge order. A cached effective config may be used only after a compatible value has previously been stored locally.
 
-If that RPC call fails, the fallback SELECT path resolves the same five keys and merges them in the same order:
+Feature flags are app_config-first. The old `tenants.features` path is deprecated compatibility only.
 
-```text
-GLOBAL
-TEMPLATE
-TENANT
-requested SERVICE
-DEVICE
-```
+## Final RLS/auth contract
 
-The `inherited_from_template` compatibility rule on a service row removes service-level MDR aliases so the template MDR remains authoritative where intended.
+Cloud config access is authenticated:
 
-If remote access fails completely, the last effective config may be read from SharedPreferences cache.
+- anon direct SELECT on Final Pos backing tables is denied;
+- anon EXECUTE on `get_effective_config(...)` is denied;
+- authenticated callers may execute the RPC;
+- every RPC validates `device_id -> tenant_id`;
+- normal authenticated callers must own the device through `devices.user_id = auth.uid()`;
+- service-role access is server-side only and must never be embedded in the APK.
 
-Cache key:
+`lib/main.dart` creates the publishable-key Supabase client but does not itself establish a device authentication session. Therefore a production/UAT deployment must provision/sign in the device before live protected config reads can succeed. Publishable-key-only anonymous access is not a supported fallback.
 
-```text
-p6.effective.<tenant>.<device>.<service>
-```
+## Admin ↔ APK ↔ RPC parity
 
-## Feature flags
-
-Final Pos feature flags are sourced from `app_config`.
-
-Feature resolution reads:
+The effective-config contract is the same in:
 
 ```text
-global
-template:<tenant.template_id>
-tenant:<tenant_id>
-```
-
-and then reads `features` or the supported flat feature aliases from that effective value.
-
-The old `tenants.features` path is deprecated and remains only as a warning-emitting legacy fallback:
-
-```dart
-// DEPRECATED: tenants.features removed, Final Pos uses app_config
-```
-
-Feature cache key:
-
-```text
-p6.features.<tenant>
-```
-
-## RLS/auth contract
-
-The Phase 5 backend contract no longer allows anonymous Final Pos config/identity reads.
-
-`get_effective_config(...)` requires an authenticated caller and validates:
-
-1. the requested device exists;
-2. the device belongs to the requested tenant;
-3. a normal authenticated caller owns the device through `devices.user_id`.
-
-The canonical super admin is authenticated separately and retains its explicit management policy, but the RPC still requires a valid device-to-tenant pair.
-
-Direct fallback SELECTs are also subject to RLS and therefore require an authenticated session.
-
-### Current entry-point limitation
-
-`lib/main.dart` constructs `SupabaseClient` with the publishable key but does not itself perform sign-in or provision an authenticated device session.
-
-Therefore Phase 7 does **not** claim that a fresh install can reach live authenticated config merely by launching the current HomeScreen. Device-auth provisioning/session wiring must exist before the Phase 5 RLS contract can succeed online.
-
-Offline cache may only help after a compatible value has previously been cached.
-
-## TEMPLATE parity
-
-The five-level model is aligned across:
-
-```text
-Flutter ConfigService
 btp-admin/editor-core.js
+pos-app/lib/core/config/config_service.dart
 public.get_effective_config(...)
 ```
 
-All three include TEMPLATE before TENANT.
-
-This supersedes the historical `GLOBAL <- TENANT <- SERVICE <- DEVICE` wording.
-
-## Current UAT values in HomeScreen
-
-The current HomeScreen still exposes historical UAT tenant labels:
+All three use:
 
 ```text
-berkah_sumber
-clientA
-clientB
+GLOBAL → TEMPLATE → TENANT → requested SERVICE → DEVICE
 ```
 
-and documents `infinix_xos_123` as its default UAT device helper.
+with top-level overwrite and the same `inherited_from_template` MDR behavior.
 
-Those labels are part of the current UI implementation; they are not the canonical 352-key workbook naming scheme. The canonical workbook uses the Final Pos inventory governed by `APP_CONFIG_EXPORT`.
+## Release boundary
 
-## Verification commands
+The current Play Store build description may claim:
 
-Repository CI runs:
+- Final Pos UAT;
+- tenant/device selection;
+- Supabase sync/config verification;
+- effective config preview;
+- service availability status.
 
-```text
-flutter analyze
-flutter test
-flutter build appbundle --release
-```
-
-The workbook validation command is:
-
-```text
-python3 scripts/sync_excel_to_supabase.py --dry-run
-```
-
-Canonical workbook inventory:
-
-```text
-1 global + 3 template + 100 tenant + 140 service + 108 device = 352
-```
-
-## Release-note boundary
-
-Current Play Store release notes may claim the UAT/configuration viewer and status information reachable from HomeScreen.
-
-They must not claim, as current reachable release UX:
+It must not claim as currently reachable HomeScreen UX:
 
 - offline cashier checkout;
 - QRIS transaction flow;
-- PPN report flow.
+- PPN reporting flow.
 
-Those capabilities are not reachable from the current HomeScreen entry path.
+## Verification
+
+```text
+python3 scripts/sync_excel_to_supabase.py --dry-run
+→ 352 keys validated
+
+node --check btp-admin/editor-core.js
+→ PASS
+
+DEV app_config count
+→ 352
+```

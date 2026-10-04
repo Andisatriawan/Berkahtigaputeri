@@ -1,1 +1,1 @@
-Rilis UAT Berkah Tiga Puteri POS. Build ini menyediakan layar konfigurasi tenant/device untuk memeriksa status config, MDR efektif POS, serta ketersediaan layanan POS/Akuntansi. Alur kasir offline, transaksi QRIS, dan laporan PPN belum tersedia dari HomeScreen pada build ini.
+Final Pos UAT — pemilihan tenant/device, verifikasi sinkronisasi Supabase, dan pratinjau konfigurasi efektif. HomeScreen saat ini belum membuka alur kasir, transaksi QRIS, atau laporan PPN.
