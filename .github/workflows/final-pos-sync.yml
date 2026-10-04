@@ -14,7 +14,31 @@ permissions:
   contents: read
 
 jobs:
-  sync-and-verify:
+  validate-excel:
+    name: Validate Excel payload
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: Install validation dependencies
+        run: python -m pip install --disable-pip-version-check openpyxl requests
+
+      - name: Validate FINAL Excel payload
+        env:
+          FINAL_POS_VALIDATE_ONLY: '1'
+        run: python scripts/sync_excel_to_supabase.py
+
+  sync-excel:
+    name: Sync Excel to Supabase
+    needs: validate-excel
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
@@ -31,24 +55,41 @@ jobs:
           cache: pip
 
       - name: Install sync dependencies
-        run: python -m pip install --disable-pip-version-check openpyxl supabase
-
-      - name: Validate Excel payload
-        env:
-          FINAL_POS_VALIDATE_ONLY: '1'
-        run: python scripts/sync_excel_to_supabase.py
+        run: python -m pip install --disable-pip-version-check openpyxl requests
 
       - name: Sync FINAL Excel to Supabase app_config
         if: ${{ env.SUPABASE_URL != '' && env.SUPABASE_SERVICE_KEY != '' }}
-        run: python scripts/sync_excel_to_supabase.py
-
-      - name: Report missing sync secret without exposing it
-        if: ${{ env.SUPABASE_URL == '' || env.SUPABASE_SERVICE_KEY == '' }}
+        shell: bash
         run: |
-          echo '::warning::Supabase sync skipped because SUPABASE_URL or SUPABASE_SERVICE_KEY is not configured as a repository secret.'
-          echo 'Excel validation still passed. Add the two repository secrets to enable automatic writes.'
+          set -o pipefail
+          python scripts/sync_excel_to_supabase.py 2>&1 | tee sync.log
 
-      - name: Verify GitHub Pages Final Pos admin
+      - name: Skip sync when Supabase secrets are missing
+        if: ${{ env.SUPABASE_URL == '' || env.SUPABASE_SERVICE_KEY == '' }}
+        shell: bash
+        run: |
+          {
+            echo 'Supabase sync skipped.'
+            echo '::warning::SUPABASE_URL or SUPABASE_SERVICE_KEY is not configured as a GitHub Actions repository secret.'
+            echo 'Excel validation passed; no database write was attempted.'
+          } | tee sync.log
+
+      - name: Upload sync log
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: sync-log
+          path: sync.log
+          if-no-files-found: warn
+          retention-days: 14
+
+  verify-pages:
+    name: Verify GitHub Pages Final Pos admin
+    needs: validate-excel
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: Verify published Final Pos admin
         shell: bash
         run: |
           set -euo pipefail
