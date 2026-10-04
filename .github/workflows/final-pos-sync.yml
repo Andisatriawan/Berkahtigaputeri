@@ -1,4 +1,4 @@
-name: Final Pos - Simple Green Sync
+name: Final Pos Sync (fail-closed)
 
 on:
   push:
@@ -7,11 +7,12 @@ on:
       - 'config/*.xlsx'
       - 'btp-admin/final-pos-template-admin.html'
       - 'scripts/sync_excel_to_supabase.py'
+      - '.github/workflows/final-pos-sync.yml'
   workflow_dispatch:
 
 jobs:
   final-pos-sync:
-    name: Final Pos Sync (always green)
+    name: Final Pos Sync (fail-closed)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -28,22 +29,73 @@ jobs:
       - name: Verify config asset exists
         shell: bash
         run: |
-          ls -lh config/ || echo 'config/ not assembled yet; sync step will remain GREEN.'
+          set -euo pipefail
+          test -f config/FINAL_Production_Excel_A_WebC_Template_100Tenants.xlsx
+          ls -lh config/FINAL_Production_Excel_A_WebC_Template_100Tenants.xlsx
 
-      - name: Sync 352 app_config keys to Supabase
+      - name: Validate workbook contract
+        run: python3 scripts/sync_excel_to_supabase.py --dry-run
+
+      - name: Require Supabase sync secrets
         shell: bash
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
         run: |
-          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_SERVICE_KEY" ]; then
-            echo '::warning::SUPABASE_URL or SUPABASE_SERVICE_KEY is missing. Sync skipped; workflow remains GREEN.'
-            exit 0
+          set -euo pipefail
+          if [ -z "${SUPABASE_URL:-}" ]; then
+            echo '::error::SUPABASE_URL is required for Final Pos sync.'
+            exit 1
+          fi
+          if [ -z "${SUPABASE_SERVICE_KEY:-}" ]; then
+            echo '::error::SUPABASE_SERVICE_KEY is required for Final Pos sync.'
+            exit 1
           fi
 
-          if python scripts/sync_excel_to_supabase.py; then
-            echo 'Final Pos sync completed.'
-          else
-            echo '::warning::Final Pos sync failed. Inspect the log; workflow intentionally remains GREEN.'
-            exit 0
+      - name: Sync workbook-owned data to Supabase
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: python3 scripts/sync_excel_to_supabase.py
+
+      - name: Verify app_config exact count is 352
+        shell: bash
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          set -euo pipefail
+
+          headers_file="$(mktemp)"
+          trap 'rm -f "$headers_file"' EXIT
+
+          curl --fail-with-body --silent --show-error --location \
+            --dump-header "$headers_file" \
+            --output /dev/null \
+            --get "${SUPABASE_URL%/}/rest/v1/app_config" \
+            --data-urlencode 'select=key' \
+            --data-urlencode 'limit=1' \
+            --header "apikey: ${SUPABASE_SERVICE_KEY}" \
+            --header "Authorization: Bearer ${SUPABASE_SERVICE_KEY}" \
+            --header 'Prefer: count=exact'
+
+          content_range="$(awk 'BEGIN{IGNORECASE=1} /^content-range:/ {gsub("\r", "", $2); print $2}' "$headers_file" | tail -n 1)"
+          if [ -z "$content_range" ] || [[ "$content_range" != */* ]]; then
+            echo '::error::PostgREST did not return a valid Content-Range header.'
+            cat "$headers_file"
+            exit 1
           fi
+
+          actual_count="${content_range##*/}"
+          if ! [[ "$actual_count" =~ ^[0-9]+$ ]]; then
+            echo "::error::Invalid app_config count from Content-Range: ${content_range}"
+            exit 1
+          fi
+
+          echo "Post-sync app_config count: ${actual_count}"
+          if [ "$actual_count" -ne 352 ]; then
+            echo "::error::Final Pos app_config count mismatch: expected 352, got ${actual_count}."
+            exit 1
+          fi
+
+          echo 'Post-sync verification passed: app_config count = 352.'
