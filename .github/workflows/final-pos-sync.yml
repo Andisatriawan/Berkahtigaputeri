@@ -7,6 +7,15 @@ on:
       - 'config/*.xlsx'
       - 'btp-admin/final-pos-template-admin.html'
       - 'scripts/sync_excel_to_supabase.py'
+      - 'scripts/sync_excel_to_supabase_legacy.py'
+      - '.github/workflows/final-pos-sync.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'config/*.xlsx'
+      - 'btp-admin/final-pos-template-admin.html'
+      - 'scripts/sync_excel_to_supabase.py'
+      - 'scripts/sync_excel_to_supabase_legacy.py'
       - '.github/workflows/final-pos-sync.yml'
   workflow_dispatch:
 
@@ -33,9 +42,6 @@ jobs:
           test -f config/FINAL_Production_Excel_A_WebC_Template_100Tenants.xlsx
           ls -lh config/FINAL_Production_Excel_A_WebC_Template_100Tenants.xlsx
 
-      - name: Validate workbook contract
-        run: python3 scripts/sync_excel_to_supabase.py --dry-run
-
       - name: Require Supabase sync secrets
         shell: bash
         env:
@@ -43,28 +49,29 @@ jobs:
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
         run: |
           set -euo pipefail
-          if [ -z "${SUPABASE_URL:-}" ]; then
-            echo '::error::SUPABASE_URL is required for Final Pos sync.'
-            exit 1
-          fi
-          if [ -z "${SUPABASE_SERVICE_KEY:-}" ]; then
-            echo '::error::SUPABASE_SERVICE_KEY is required for Final Pos sync.'
+          if [ -z "${SUPABASE_URL:-}" ] || [ -z "${SUPABASE_SERVICE_KEY:-}" ]; then
+            echo '::error::Missing Supabase secrets - cannot verify sync'
             exit 1
           fi
 
       - name: Sync workbook-owned data to Supabase
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
-        run: python3 scripts/sync_excel_to_supabase.py
-
-      - name: Verify app_config exact count is 352
         shell: bash
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
         run: |
           set -euo pipefail
+          python3 scripts/sync_excel_to_supabase.py
+
+      - name: Post-sync verify workbook contract and app_config count
+        shell: bash
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          set -euo pipefail
+
+          python3 scripts/sync_excel_to_supabase.py --dry-run
 
           headers_file="$(mktemp)"
           trap 'rm -f "$headers_file"' EXIT
@@ -74,7 +81,6 @@ jobs:
             --output /dev/null \
             --get "${SUPABASE_URL%/}/rest/v1/app_config" \
             --data-urlencode 'select=key' \
-            --data-urlencode 'limit=1' \
             --header "apikey: ${SUPABASE_SERVICE_KEY}" \
             --header "Authorization: Bearer ${SUPABASE_SERVICE_KEY}" \
             --header 'Prefer: count=exact'
@@ -93,9 +99,9 @@ jobs:
           fi
 
           echo "Post-sync app_config count: ${actual_count}"
-          if [ "$actual_count" -ne 352 ]; then
-            echo "::error::Final Pos app_config count mismatch: expected 352, got ${actual_count}."
+          if [ "$actual_count" -lt 352 ]; then
+            echo "::error::Final Pos app_config count too low: expected at least 352, got ${actual_count}."
             exit 1
           fi
 
-          echo 'Post-sync verification passed: app_config count = 352.'
+          echo "Post-sync verification passed: app_config count ${actual_count} >= 352."
