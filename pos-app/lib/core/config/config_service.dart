@@ -119,9 +119,27 @@ class ConfigService {
     required String deviceId,
     required String service,
   }) async {
+    final tenantKey = 'tenant:$tenantId';
+    String? templateId;
+
+    final tenantRow = await _client
+        .from('app_config')
+        .select('value')
+        .eq('key', tenantKey)
+        .maybeSingle();
+
+    if (tenantRow != null && tenantRow['value'] != null) {
+      final tenantValue = _asJsonMap(tenantRow['value']);
+      final rawTemplate = tenantValue['template_id'] ?? tenantValue['template'];
+      if (rawTemplate != null && rawTemplate.toString().trim().isNotEmpty) {
+        templateId = rawTemplate.toString().trim().toUpperCase();
+      }
+    }
+
     final orderedKeys = <String>[
       'global',
-      'tenant:$tenantId',
+      if (templateId != null) 'template:$templateId',
+      tenantKey,
       'tenant:$tenantId:service:$service',
       'device:$deviceId',
     ];
@@ -136,7 +154,16 @@ class ConfigService {
       final row = Map<String, dynamic>.from(rawRow as Map);
       final key = row['key'] as String?;
       if (key == null) continue;
-      valuesByKey[key] = _asJsonMap(row['value']);
+      final value = _asJsonMap(row['value']);
+      if (key == 'tenant:$tenantId:service:$service' &&
+          value['inherited_from_template'] != null) {
+        value
+          ..remove('mdr')
+          ..remove('mdr_pos')
+          ..remove('qris_mdr')
+          ..remove('mdr_%');
+      }
+      valuesByKey[key] = value;
     }
 
     return mergeLayers(
