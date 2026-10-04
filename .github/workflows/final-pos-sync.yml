@@ -1,0 +1,66 @@
+name: Final Pos - Sync Excel A + Web C
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'config/*.xlsx'
+      - 'btp-admin/final-pos-template-admin.html'
+      - 'scripts/sync_excel_to_supabase.py'
+      - '.github/workflows/final-pos-sync.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sync-and-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: Install sync dependencies
+        run: python -m pip install --disable-pip-version-check openpyxl supabase
+
+      - name: Validate Excel payload
+        env:
+          FINAL_POS_VALIDATE_ONLY: '1'
+        run: python scripts/sync_excel_to_supabase.py
+
+      - name: Sync FINAL Excel to Supabase app_config
+        if: ${{ env.SUPABASE_URL != '' && env.SUPABASE_SERVICE_KEY != '' }}
+        run: python scripts/sync_excel_to_supabase.py
+
+      - name: Report missing sync secret without exposing it
+        if: ${{ env.SUPABASE_URL == '' || env.SUPABASE_SERVICE_KEY == '' }}
+        run: |
+          echo '::warning::Supabase sync skipped because SUPABASE_URL or SUPABASE_SERVICE_KEY is not configured as a repository secret.'
+          echo 'Excel validation still passed. Add the two repository secrets to enable automatic writes.'
+
+      - name: Verify GitHub Pages Final Pos admin
+        shell: bash
+        run: |
+          set -euo pipefail
+          URL='https://berkah-ajb-dev.github.io/Berkahtigaputeri/btp-admin/final-pos-template-admin.html'
+          for attempt in $(seq 1 24); do
+            code="$(curl -L -sS -o /tmp/final-pos.html -w '%{http_code}' "$URL" || true)"
+            if [ "$code" = '200' ] && grep -q 'Berkah POS - FINAL PRODUCTION' /tmp/final-pos.html; then
+              echo "Pages GREEN: $URL"
+              exit 0
+            fi
+            echo "Pages not ready yet (attempt ${attempt}/24, HTTP ${code}); retrying..."
+            sleep 10
+          done
+          echo "Pages verification failed: $URL"
+          exit 1
