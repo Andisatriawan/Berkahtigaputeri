@@ -189,25 +189,27 @@
       const expectedVersion=Number(row.value.version);
       const newValue=buildNewValue(doc,row.value||{});
       const {data,error}=await BTP_AUTH.client().rpc('update_app_config_atomic',{
-        key:row.key,
-        new_value:newValue,
-        expected_version:expectedVersion
+        p_key:row.key,
+        p_new_value:newValue,
+        p_expected_version:expectedVersion
       });
       if(error){
         if(error.code==='40001'){
           cache.delete(templateId);
           lastHydrated='';
-          throw new Error(`Version conflict ${row.key}. Data di server berubah; reload template sebelum menyimpan ulang.`);
+          await ensureHydrated();
+          status('Data changed by another admin, please reload','error');
+          return false;
         }
         throw error;
       }
-      const result=Array.isArray(data)?data[0]:data;
-      const stored=result?.value;
-      const version=Number(result?.version??stored?.version);
-      if(!stored||!Number.isInteger(version)||version!==expectedVersion+1)throw new Error('Respons atomic RPC tidak valid');
-      cache.set(templateId,{key:row.key,value:stored,updated_at:result.updated_at});
+      const stored=Array.isArray(data)?data[0]:data;
+      const version=Number(stored?.version);
+      if(!stored||typeof stored!=='object'||Array.isArray(stored)||!Number.isInteger(version)||version!==expectedVersion+1)throw new Error('Respons atomic RPC tidak valid');
+      cache.set(templateId,{key:row.key,value:stored,updated_at:new Date().toISOString()});
       lastHydrated=templateId;
       status(`SAVE TEMPLATE ${templateId} OK · version ${expectedVersion} → ${version}`,'ok');
+      return true;
     }
 
     async function boot(){
