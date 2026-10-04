@@ -3,20 +3,8 @@ name: Final Pos Sync (fail-closed)
 on:
   push:
     branches: [main]
-    paths:
-      - 'config/*.xlsx'
-      - 'btp-admin/final-pos-template-admin.html'
-      - 'scripts/sync_excel_to_supabase.py'
-      - 'scripts/sync_excel_to_supabase_legacy.py'
-      - '.github/workflows/final-pos-sync.yml'
   pull_request:
     branches: [main]
-    paths:
-      - 'config/*.xlsx'
-      - 'btp-admin/final-pos-template-admin.html'
-      - 'scripts/sync_excel_to_supabase.py'
-      - 'scripts/sync_excel_to_supabase_legacy.py'
-      - '.github/workflows/final-pos-sync.yml'
   workflow_dispatch:
 
 jobs:
