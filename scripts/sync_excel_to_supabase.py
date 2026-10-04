@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List
 
+import requests
 from openpyxl import load_workbook
 
 EXCEL_PATH = Path(os.environ.get(
@@ -18,6 +19,7 @@ EXPECTED_TENANTS = 100
 EXPECTED_SERVICES = 140
 EXPECTED_DEVICES = 108
 EXPECTED_TEMPLATES = {"BASIC", "PRO", "ENTERPRISE"}
+REQUEST_TIMEOUT = 30
 
 
 def _json_value(v: Any) -> Any:
@@ -238,20 +240,47 @@ def _canonical(v: Any) -> str:
     return json.dumps(v, sort_keys=True, separators=(",", ":"), ensure_ascii=False, default=str)
 
 
+def _rest_headers(service_key: str, *, upsert: bool = False) -> Dict[str, str]:
+    headers = {
+        "apikey": service_key,
+        "Authorization": f"Bearer {service_key}",
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "User-Agent": "berkahtigaputeri-final-pos-sync/1.0",
+    }
+    if upsert:
+        headers["Prefer"] = "resolution=merge-duplicates,return=minimal"
+    return headers
+
+
+def _raise_rest_error(response: requests.Response, operation: str) -> None:
+    if response.ok:
+        return
+    detail = response.text.strip().replace("\n", " ")[:1000]
+    raise RuntimeError(
+        f"Supabase REST {operation} failed: HTTP {response.status_code}. "
+        f"{detail or 'No response body'}"
+    )
+
+
 def sync(payloads: List[Dict[str, Any]]) -> int:
-    url = os.environ.get("SUPABASE_URL", "").strip()
+    url = os.environ.get("SUPABASE_URL", "").strip().rstrip("/")
     service_key = os.environ.get("SUPABASE_SERVICE_KEY", "").strip()
     if not url or not service_key:
         raise RuntimeError("SUPABASE_URL and SUPABASE_SERVICE_KEY are required")
 
-    from supabase import create_client
-    client = create_client(url, service_key)
+    endpoint = f"{url}/rest/v1/app_config"
+    read_response = requests.get(
+        endpoint,
+        headers=_rest_headers(service_key),
+        params={"select": "key,value", "limit": "1000"},
+        timeout=REQUEST_TIMEOUT,
+    )
+    _raise_rest_error(read_response, "read app_config")
+
     existing: Dict[str, Any] = {}
-    for batch in _chunks(payloads, BATCH_SIZE):
-        keys = [row["key"] for row in batch]
-        response = client.table("app_config").select("key,value").in_("key", keys).execute()
-        for row in (response.data or []):
-            existing[row["key"]] = row.get("value")
+    for row in read_response.json():
+        existing[str(row["key"])] = row.get("value")
 
     changed = [
         row for row in payloads
@@ -261,7 +290,14 @@ def sync(payloads: List[Dict[str, Any]]) -> int:
     now = datetime.now(timezone.utc).isoformat()
     for batch in _chunks(changed, BATCH_SIZE):
         write_batch = [{**row, "updated_at": now} for row in batch]
-        client.table("app_config").upsert(write_batch, on_conflict="key").execute()
+        write_response = requests.post(
+            endpoint,
+            headers=_rest_headers(service_key, upsert=True),
+            params={"on_conflict": "key"},
+            json=write_batch,
+            timeout=REQUEST_TIMEOUT,
+        )
+        _raise_rest_error(write_response, "upsert app_config")
 
     return len(changed)
 
@@ -276,7 +312,12 @@ def main() -> int:
         print(f"Validated {len(payloads)} keys - 100 tenants SaaS ready")
         return 0
 
-    changed = sync(payloads)
+    try:
+        changed = sync(payloads)
+    except (requests.RequestException, RuntimeError, ValueError) as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 3
+
     print(f"Synced {len(payloads)} keys - 100 tenants SaaS ready")
     print(f"Changed/upserted rows: {changed}; unchanged rows skipped: {len(payloads) - changed}")
     return 0
