@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:developer' as developer;
 
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase/supabase.dart';
@@ -94,24 +95,93 @@ class ConfigService {
     final cacheKey = _featuresCacheKey(tenantId);
 
     try {
-      final row = await _client
-          .from('tenants')
-          .select('features')
-          .eq('tenant_id', tenantId)
-          .single();
-
-      final featuresJson = _asJsonMap(row['features']);
-      final features = TenantFeatures.fromJson(featuresJson);
+      final features = await _getFeaturesFromAppConfig(tenantId);
       await _preferences.setString(cacheKey, jsonEncode(features.toJson()));
       return TenantFeaturesResult(value: features, fromCache: false);
-    } catch (_) {
-      final cached = _preferences.getString(cacheKey);
-      if (cached == null) rethrow;
-      return TenantFeaturesResult(
-        value: TenantFeatures.fromJson(_asJsonMap(jsonDecode(cached))),
-        fromCache: true,
+    } catch (appConfigError) {
+      // DEPRECATED: tenants.features removed, Final Pos uses app_config
+      developer.log(
+        'WARNING: app_config features unavailable for $tenantId; '
+        'falling back to deprecated tenants.features for legacy tenant compatibility.',
+        name: 'ConfigService',
+        error: appConfigError,
+      );
+
+      try {
+        final row = await _client
+            .from('tenants')
+            .select('features')
+            .eq('tenant_id', tenantId)
+            .single();
+        final features = TenantFeatures.fromJson(_asJsonMap(row['features']));
+        await _preferences.setString(cacheKey, jsonEncode(features.toJson()));
+        return TenantFeaturesResult(value: features, fromCache: false);
+      } catch (_) {
+        final cached = _preferences.getString(cacheKey);
+        if (cached == null) rethrow;
+        return TenantFeaturesResult(
+          value: TenantFeatures.fromJson(_asJsonMap(jsonDecode(cached))),
+          fromCache: true,
+        );
+      }
+    }
+  }
+
+  Future<TenantFeatures> _getFeaturesFromAppConfig(String tenantId) async {
+    final tenantKey = 'tenant:$tenantId';
+    final tenantRow = await _client
+        .from('app_config')
+        .select('value')
+        .eq('key', tenantKey)
+        .maybeSingle();
+
+    if (tenantRow == null || tenantRow['value'] == null) {
+      throw StateError('Missing app_config row $tenantKey');
+    }
+
+    final tenantValue = _asJsonMap(tenantRow['value']);
+    final rawTemplate = tenantValue['template_id'] ?? tenantValue['template'];
+    final templateId = rawTemplate?.toString().trim().toUpperCase();
+
+    final orderedKeys = <String>[
+      'global',
+      if (templateId != null && templateId.isNotEmpty) 'template:$templateId',
+      tenantKey,
+    ];
+    final rows = await _client
+        .from('app_config')
+        .select('key,value')
+        .inFilter('key', orderedKeys);
+
+    final valuesByKey = <String, Map<String, dynamic>>{};
+    for (final rawRow in rows) {
+      final row = Map<String, dynamic>.from(rawRow as Map);
+      final key = row['key'] as String?;
+      if (key == null) continue;
+      valuesByKey[key] = _asJsonMap(row['value']);
+    }
+
+    final effective = mergeLayers(
+      orderedKeys.map(
+        (key) => valuesByKey[key] ?? const <String, dynamic>{},
+      ),
+    );
+    final rawFeatures = effective['features'];
+    if (rawFeatures is Map) {
+      return TenantFeatures.fromJson(Map<String, dynamic>.from(rawFeatures));
+    }
+
+    if (effective.containsKey('pos_enabled') ||
+        effective.containsKey('akuntansi_enabled')) {
+      return TenantFeatures(
+        pos: effective['pos_enabled'] == true,
+        akuntansi: effective['akuntansi_enabled'] == true,
       );
     }
+
+    throw const FormatException(
+      'Effective app_config does not contain tenant feature flags',
+    );
   }
 
   Future<Map<String, dynamic>> _fallbackSelectAndMerge({

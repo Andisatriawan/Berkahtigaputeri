@@ -89,6 +89,8 @@ values ('infinix_xos_123', 'berkah_sumber', 'Toko Berkah Sumber', 'com.btp.uat',
 on conflict (device_id) do nothing;
 
 -- 7. Seed app_config 3 layer
+-- Phase 6 invariant: every app_config seed has a positive integer version.
+-- These bootstrap seeds use DO NOTHING on conflict so they never reset a newer version.
 -- Layer 1 Global
 insert into app_config (key, value) values ('global', '{
   "ppn_rate": 11,
@@ -133,7 +135,8 @@ insert into app_config (key, value) values ('tenant:berkah_sumber:service:pos', 
   "qris_enabled": true,
   "transfer_enabled": true,
   "mdr": 0.7,
-  "hardware_mode": "SIMULATED"
+  "hardware_mode": "SIMULATED",
+  "version": 1
 }'::jsonb)
 on conflict (key) do nothing;
 
@@ -141,7 +144,8 @@ insert into app_config (key, value) values ('tenant:berkah_sumber:service:akunta
   "ppn_account": "2-2010",
   "sales_tunai": "1-1010",
   "sales_qris_pending": "1-1020",
-  "auto_jurnal": true
+  "auto_jurnal": true,
+  "version": 1
 }'::jsonb)
 on conflict (key) do nothing;
 

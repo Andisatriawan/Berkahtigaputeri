@@ -1,190 +1,385 @@
 #!/usr/bin/env python3
-"""Sync the FINAL Pos workbook to Supabase app_config through PostgREST."""
+"""Validate and sync the FINAL Pos workbook as a versioned administrative replacement.
 
-import json
+Workbook parsing and relational projections remain in sync_excel_to_supabase_legacy.
+Existing app_config rows are replaced only through update_app_config_atomic(), so a
+successful replacement always increments the live database version by exactly one.
+Missing canonical rows bootstrap at version 1.
+
+Normal mode is fail-closed on a version conflict. --force-version is an explicit
+administrative override for workbook replacement: after SQLSTATE 40001 it refreshes
+the latest live version and retries the atomic RPC. It never writes a caller-chosen
+version and never disables the database compare-and-swap check.
+"""
+
+from __future__ import annotations
+
+import argparse
 import os
 import sys
-from pathlib import Path
 from typing import Any
 
 import requests
-from openpyxl import load_workbook
 
-EXCEL_PATH = Path(
-    os.environ.get(
-        "FINAL_POS_EXCEL",
-        "config/FINAL_Production_Excel_A_WebC_Template_100Tenants.xlsx",
-    )
-)
-EXPECTED_SHEETS = [
-    "README_PRODUCTION",
-    "TEMPLATES",
-    "GLOBAL",
-    "TENANTS_MASTER",
-    "DEVICES",
-    "SERVICES",
-    "APP_CONFIG_EXPORT",
-]
-EXPECTED_COUNTS = {
-    "global": 1,
-    "template": 3,
-    "tenant": 100,
-    "service": 140,
-    "device": 108,
-}
-EXPECTED_TEMPLATES = {"BASIC", "PRO", "ENTERPRISE"}
-EXPECTED_KEYS = 352
-BATCH_SIZE = 100
-REQUEST_TIMEOUT_SECONDS = 30
+import sync_excel_to_supabase_legacy as legacy
+
+REQUEST_TIMEOUT_SECONDS = legacy.REQUEST_TIMEOUT_SECONDS
+FORCE_RETRY_LIMIT = 5
 
 
-def _rows_as_dicts(ws) -> list[dict[str, Any]]:
-    rows = list(ws.iter_rows(values_only=True))
-    if not rows:
-        return []
-    headers = [str(value).strip() if value is not None else "" for value in rows[0]]
-    result: list[dict[str, Any]] = []
-    for row in rows[1:]:
-        if all(value is None for value in row):
-            continue
-        result.append({headers[index]: row[index] for index in range(len(headers))})
-    return result
+class VersionConflictError(RuntimeError):
+    """Raised when update_app_config_atomic returns SQLSTATE 40001."""
 
 
-def _decode_json(raw: Any, key: str) -> dict[str, Any]:
-    if isinstance(raw, dict):
-        value = raw
-    else:
-        try:
-            value = json.loads(str(raw))
-        except (TypeError, json.JSONDecodeError) as exc:
-            raise ValueError(f"Invalid value_jsonb for {key}: {exc}") from exc
-    if not isinstance(value, dict):
-        raise ValueError(f"value_jsonb for {key} must be a JSON object")
-    return value
-
-
-def load_payloads() -> list[dict[str, Any]]:
-    if not EXCEL_PATH.exists():
-        raise FileNotFoundError(f"Excel not found: {EXCEL_PATH}")
-
-    wb = load_workbook(EXCEL_PATH, read_only=True, data_only=True)
-    if wb.sheetnames != EXPECTED_SHEETS:
-        raise ValueError(f"Unexpected sheet layout: {wb.sheetnames}")
-
-    template_rows = _rows_as_dicts(wb["TEMPLATES"])
-    template_ids = {
-        str(row.get("template_id") or "").strip().upper()
-        for row in template_rows
-    }
-    if template_ids != EXPECTED_TEMPLATES:
-        raise ValueError(f"Unexpected template IDs: {sorted(template_ids)}")
-
-    if len(_rows_as_dicts(wb["TENANTS_MASTER"])) != 100:
-        raise ValueError("TENANTS_MASTER must contain exactly 100 tenants")
-    if len(_rows_as_dicts(wb["DEVICES"])) != 108:
-        raise ValueError("DEVICES must contain exactly 108 devices")
-    if len(_rows_as_dicts(wb["SERVICES"])) != 140:
-        raise ValueError("SERVICES must contain exactly 140 service rows")
-
-    global_rows = list(wb["GLOBAL"].iter_rows(min_row=2, values_only=True))
-    if not global_rows:
-        raise ValueError("GLOBAL sheet is empty")
-
-    export_rows = _rows_as_dicts(wb["APP_CONFIG_EXPORT"])
-    if len(export_rows) != EXPECTED_KEYS:
-        raise ValueError(
-            f"APP_CONFIG_EXPORT must contain {EXPECTED_KEYS} rows; got {len(export_rows)}"
-        )
-
-    payloads: list[dict[str, Any]] = []
-    seen: set[str] = set()
-    counts = {kind: 0 for kind in EXPECTED_COUNTS}
-
-    for row in export_rows:
-        key = str(row.get("key") or "").strip()
-        kind = str(row.get("type") or "").strip().lower()
-        status = str(row.get("sync_status") or "").strip().upper()
-
-        if not key:
-            raise ValueError("APP_CONFIG_EXPORT contains an empty key")
-        if key in seen:
-            raise ValueError(f"Duplicate app_config key: {key}")
-        if kind not in counts:
-            raise ValueError(f"Unsupported app_config type for {key}: {kind}")
-        if status and status != "READY":
-            raise ValueError(f"app_config key {key} is not READY: {status}")
-
-        seen.add(key)
-        counts[kind] += 1
-        payloads.append({"key": key, "value": _decode_json(row.get("value_jsonb"), key)})
-
-    if counts != EXPECTED_COUNTS:
-        raise ValueError(f"APP_CONFIG_EXPORT type counts mismatch: {counts}")
-
-    required = {
-        "global",
-        "template:BASIC",
-        "template:PRO",
-        "template:ENTERPRISE",
-        "tenant:tenant_001",
-        "tenant:tenant_001:service:pos",
-        "device:infinix_001_410",
-    }
-    missing = required.difference(seen)
-    if missing:
-        raise ValueError(f"Missing required app_config keys: {sorted(missing)}")
-
-    return payloads
-
-
-def sync(payloads: list[dict[str, Any]], url: str, service_key: str) -> None:
-    endpoint = f"{url.rstrip('/')}/rest/v1/app_config"
-    headers = {
+def _rpc_headers(service_key: str) -> dict[str, str]:
+    return {
         "apikey": service_key,
         "Authorization": f"Bearer {service_key}",
         "Content-Type": "application/json",
         "Accept": "application/json",
-        "Prefer": "resolution=merge-duplicates,return=minimal",
-        "User-Agent": "berkahtigaputeri-final-pos-sync/2.0",
+        "User-Agent": "berkahtigaputeri-final-pos-sync/6.1",
     }
 
-    for start in range(0, len(payloads), BATCH_SIZE):
-        batch = payloads[start : start + BATCH_SIZE]
-        response = requests.post(
-            endpoint,
-            params={"on_conflict": "key"},
-            headers=headers,
-            json=batch,
-            timeout=REQUEST_TIMEOUT_SECONDS,
-        )
-        if not response.ok:
-            detail = response.text.strip().replace("\n", " ")[:1000]
-            raise RuntimeError(
-                f"Supabase REST upsert failed: HTTP {response.status_code}: {detail}"
+
+def _positive_version(value: Any, *, key: str) -> int:
+    if not isinstance(value, dict):
+        raise RuntimeError(f"app_config {key} value must be a JSON object")
+    raw = value.get("version")
+    if isinstance(raw, bool):
+        raise RuntimeError(f"app_config {key} has invalid version {raw!r}")
+    try:
+        version = int(raw)
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError(f"app_config {key} has missing/invalid version {raw!r}") from exc
+    if version < 1 or str(raw).strip() not in {str(version), f"{version}.0"}:
+        raise RuntimeError(f"app_config {key} has invalid version {raw!r}")
+    return version
+
+
+def _error_payload(response: requests.Response) -> tuple[str, str]:
+    try:
+        payload = response.json()
+    except ValueError:
+        payload = None
+    if isinstance(payload, dict):
+        code = str(payload.get("code") or "")
+        message = str(payload.get("message") or payload.get("details") or response.text)
+        return code, message.strip().replace("\n", " ")[:1000]
+    return "", response.text.strip().replace("\n", " ")[:1000]
+
+
+def _atomic_update(
+    *,
+    key: str,
+    new_value: dict[str, Any],
+    expected_version: int,
+    url: str,
+    service_key: str,
+) -> dict[str, Any]:
+    response = requests.post(
+        f"{url.rstrip('/')}/rest/v1/rpc/update_app_config_atomic",
+        headers=_rpc_headers(service_key),
+        json={
+            "p_key": key,
+            "p_new_value": new_value,
+            "p_expected_version": expected_version,
+        },
+        timeout=REQUEST_TIMEOUT_SECONDS,
+    )
+    if not response.ok:
+        code, detail = _error_payload(response)
+        if code == "40001":
+            raise VersionConflictError(
+                f"Atomic app_config version conflict for {key}: {detail}"
             )
-
-
-def main() -> int:
-    url = os.environ.get("SUPABASE_URL", "").strip()
-    service_key = os.environ.get("SUPABASE_SERVICE_KEY", "").strip()
-
-    if not url or not service_key:
-        print(
-            "WARNING: SUPABASE_URL or SUPABASE_SERVICE_KEY missing; "
-            "sync skipped and workflow remains GREEN."
+        raise RuntimeError(
+            f"Atomic app_config update failed for {key}: "
+            f"HTTP {response.status_code}: {detail}"
         )
-        return 0
+
+    data = response.json()
+    if isinstance(data, list) and len(data) == 1:
+        data = data[0]
+    if not isinstance(data, dict):
+        raise RuntimeError(f"Unexpected atomic RPC response for {key}")
+
+    version = _positive_version(data, key=key)
+    if version != expected_version + 1:
+        raise RuntimeError(
+            f"Atomic RPC returned wrong version for {key}: "
+            f"expected {expected_version + 1}, got {version}"
+        )
+    return data
+
+
+def _bootstrap_insert(
+    *,
+    key: str,
+    new_value: dict[str, Any],
+    url: str,
+    service_key: str,
+) -> None:
+    # The canonical RPC is deliberately UPDATE-only. A genuinely missing key may
+    # be bootstrapped once at version 1; every subsequent replacement is atomic.
+    value = dict(new_value)
+    value["version"] = 1
+    response = requests.post(
+        f"{url.rstrip('/')}/rest/v1/app_config",
+        headers={
+            **_rpc_headers(service_key),
+            "Prefer": "return=minimal",
+        },
+        json={"key": key, "value": value},
+        timeout=REQUEST_TIMEOUT_SECONDS,
+    )
+    if not response.ok:
+        _, detail = _error_payload(response)
+        raise RuntimeError(
+            f"Bootstrap app_config insert failed for {key}: "
+            f"HTTP {response.status_code}: {detail}"
+        )
+
+
+def _fetch_current_value(
+    *,
+    key: str,
+    url: str,
+    service_key: str,
+) -> dict[str, Any]:
+    response = requests.get(
+        f"{url.rstrip('/')}/rest/v1/app_config",
+        params={"select": "key,value", "key": f"eq.{key}", "limit": "1"},
+        headers={
+            **_rpc_headers(service_key),
+            "Content-Type": "application/json",
+        },
+        timeout=REQUEST_TIMEOUT_SECONDS,
+    )
+    if not response.ok:
+        _, detail = _error_payload(response)
+        raise RuntimeError(
+            f"Cannot refresh app_config version for {key}: "
+            f"HTTP {response.status_code}: {detail}"
+        )
+    data = response.json()
+    if not isinstance(data, list) or len(data) != 1 or not isinstance(data[0], dict):
+        raise RuntimeError(f"Expected exactly one live app_config row for {key}")
+    value = data[0].get("value")
+    if not isinstance(value, dict):
+        raise RuntimeError(f"app_config {key} value must be a JSON object")
+    return value
+
+
+def _sync_app_config_atomic(
+    rows: list[dict[str, Any]],
+    *,
+    url: str,
+    service_key: str,
+    force_version: bool,
+) -> None:
+    remote_rows = legacy._fetch_rows(
+        table="app_config",
+        select="key,value",
+        url=url,
+        service_key=service_key,
+    )
+    remote = {
+        str(row.get("key")): row
+        for row in remote_rows
+        if row.get("key") is not None
+    }
+
+    updated = 0
+    inserted = 0
+    forced_retries = 0
+
+    for payload in rows:
+        key = str(payload["key"])
+        new_value = dict(payload["value"])
+        new_value.pop("version", None)
+        current = remote.get(key)
+        if current is None:
+            _bootstrap_insert(
+                key=key,
+                new_value=new_value,
+                url=url,
+                service_key=service_key,
+            )
+            remote[key] = {"key": key, "value": {**new_value, "version": 1}}
+            inserted += 1
+            continue
+
+        expected_version = _positive_version(current.get("value"), key=key)
+        retries = 0
+        while True:
+            try:
+                stored = _atomic_update(
+                    key=key,
+                    new_value=new_value,
+                    expected_version=expected_version,
+                    url=url,
+                    service_key=service_key,
+                )
+                remote[key] = {"key": key, "value": stored}
+                updated += 1
+                break
+            except VersionConflictError:
+                if not force_version:
+                    raise
+                retries += 1
+                forced_retries += 1
+                if retries > FORCE_RETRY_LIMIT:
+                    raise RuntimeError(
+                        f"--force-version retry limit exceeded for {key}; "
+                        "another writer is continuously changing the row"
+                    )
+                live_value = _fetch_current_value(
+                    key=key,
+                    url=url,
+                    service_key=service_key,
+                )
+                expected_version = _positive_version(live_value, key=key)
+                print(
+                    f"FORCE-VERSION refresh {key}: retry with live version "
+                    f"{expected_version}"
+                )
+
+    mode = "force-version" if force_version else "compare-and-swap"
+    print(
+        "VERSIONED administrative replacement: "
+        f"mode={mode} atomic_updates={updated} "
+        f"bootstrap_inserts={inserted} forced_retries={forced_retries}"
+    )
+
+
+def _verify_versions(
+    payloads: legacy.WorkbookPayloads,
+    *,
+    url: str,
+    service_key: str,
+) -> None:
+    rows = legacy._fetch_rows(
+        table="app_config",
+        select="key,value",
+        url=url,
+        service_key=service_key,
+    )
+    by_key = {str(row.get("key")): row for row in rows if row.get("key") is not None}
+    for payload in payloads.app_config:
+        key = str(payload["key"])
+        row = by_key.get(key)
+        if row is None:
+            raise RuntimeError(f"Post-sync app_config row missing: {key}")
+        _positive_version(row.get("value"), key=key)
+    print(f"VERIFIED positive versions on {len(payloads.app_config)} canonical app_config rows")
+
+
+def sync(
+    payloads: legacy.WorkbookPayloads,
+    url: str,
+    service_key: str,
+    *,
+    force_version: bool = False,
+) -> None:
+    # Relational ownership remains workbook-driven and keeps the Phase 2 merge behavior.
+    legacy._upsert(
+        table="tenants",
+        rows=payloads.tenants,
+        on_conflict="tenant_id",
+        url=url,
+        service_key=service_key,
+    )
+    legacy._upsert(
+        table="tenant_services",
+        rows=payloads.services,
+        on_conflict="tenant_id,service",
+        url=url,
+        service_key=service_key,
+    )
+    legacy._upsert(
+        table="devices",
+        rows=payloads.devices,
+        on_conflict="device_id",
+        url=url,
+        service_key=service_key,
+    )
+
+    _sync_app_config_atomic(
+        payloads.app_config,
+        url=url,
+        service_key=service_key,
+        force_version=force_version,
+    )
+    legacy.verify_remote(payloads, url, service_key)
+    _verify_versions(payloads, url=url, service_key=service_key)
+
+
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Validate workbook and relational payloads without credentials or writes.",
+    )
+    parser.add_argument(
+        "--force-version",
+        action="store_true",
+        help=(
+            "Administrative replacement override: on SQLSTATE 40001, refresh the "
+            "live version and retry the atomic RPC. Stored version still increments."
+        ),
+    )
+    return parser.parse_args(argv)
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = parse_args(argv)
 
     try:
-        payloads = load_payloads()
-        sync(payloads, url, service_key)
-    except (FileNotFoundError, ValueError, RuntimeError, requests.RequestException) as exc:
+        payloads = legacy.load_workbook_payloads()
+        legacy._print_inventory(payloads)
+    except (FileNotFoundError, ValueError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
 
-    print(f"DONE Synced {len(payloads)} keys")
+    if args.dry_run:
+        mode = " with --force-version requested (no writes in dry-run)" if args.force_version else ""
+        print(f"DRY-RUN OK{mode}: no Supabase credentials required; no network writes performed")
+        return 0
+
+    url = os.environ.get("SUPABASE_URL", "").strip()
+    service_key = os.environ.get("SUPABASE_SERVICE_KEY", "").strip()
+    if not url or not service_key:
+        print(
+            "ERROR: SUPABASE_URL and SUPABASE_SERVICE_KEY are required for full sync. "
+            "Use --dry-run for validation-only mode.",
+            file=sys.stderr,
+        )
+        return 2
+
+    try:
+        sync(
+            payloads,
+            url,
+            service_key,
+            force_version=args.force_version,
+        )
+    except (RuntimeError, requests.RequestException, ValueError) as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
+
+    print(
+        "DONE Versioned administrative replacement: "
+        f"{len(payloads.app_config)} app_config keys, "
+        f"{len(payloads.tenants)} tenants, "
+        f"{len(payloads.services)} services, "
+        f"{len(payloads.devices)} devices"
+    )
     return 0
+
+
+WorkbookPayloads = legacy.WorkbookPayloads
+load_workbook_payloads = legacy.load_workbook_payloads
 
 
 if __name__ == "__main__":

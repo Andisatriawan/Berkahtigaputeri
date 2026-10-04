@@ -1,41 +1,98 @@
-# Berkahtigaputeri
+# Berkahtigaputeri - Final Pos
 
-## 🤖 AI AGENT COMPLIANCE - WAJIB BACA
+Berkah Tiga Puteri POS is a multi-tenant POS + accounting platform built around one canonical Final Pos configuration model.
 
-**Jika kamu AI/Agent baru yang akses repo ini, baca ini dulu:**
+## Canonical architecture
 
-Repo ini punya **dokumen permanen** di `/docs/permanent/` yang harus jadi compliance karena context window ChatGPT terbatas.
+Read first:
 
-### Baca urut:
-1. `DOC_00_MASTER_ROADMAP.md` - Prioritas eksekusi
-2. `DOC_01_3_LAYER_CONFIG.md` - 3 Layer: GLOBAL (`global`), TENANT (`tenant:<id>` + `service:pos`/`service:akuntansi`), DEVICE (`device:<id>`)
-3. `DOC_02_SUPABASE_SCHEMA_V1.sql` - Schema Supabase live
-4. `DOC_03_RLS_AUTH.sql`
-5. `DOC_04_ADMIN_ARCHITECTURE.md`
+```text
+docs/permanent/DOC_00_CANONICAL_ARCHITECTURE_DECISION.md
+```
 
-### Live Admin:
-https://berkah-ajb-dev.github.io/Berkahtigaputeri/btp-admin/
-
-### Aturan:
-- Schema: `app_config(key PRIMARY KEY, value JSONB)` - bukan `(device_id, key, value)` lama
-- Admin resmi hanya `btp-admin/` - jangan bikin `complete-settings.html` duplikat
-- HEAD CORE `a19cb3f CI #315 SUCCESS` jangan diubah
-- `/docs/permanent/` adalah akumulasi permanen, jangan hapus
-
-## Final Pos - 100 Tenants SaaS (Excel A + Web C Template)
-
-Final production sekarang memakai satu workbook bulk + satu Template Admin untuk mengelola 100 tenant secara scalable tanpa satu-sheet-per-tenant.
-
-- GitHub Pages Template Admin: https://berkah-ajb-dev.github.io/Berkahtigaputeri/btp-admin/final-pos-template-admin.html
-- Excel canonical: `config/FINAL_Production_Excel_A_WebC_Template_100Tenants.xlsx`
-- Sync script: `scripts/sync_excel_to_supabase.py`
-- Workflow: `.github/workflows/final-pos-sync.yml`
-- Supabase source of truth: `app_config(key, value)` dengan 352 key canonical dari workbook: 1 global + 3 templates + 100 tenants + 140 services + 108 devices.
-
-Inheritance Final Pos:
+The only supported configuration inheritance is:
 
 ```text
 GLOBAL -> TEMPLATE -> TENANT -> SERVICE -> DEVICE
 ```
 
-Service rows yang berasal dari template tetap disimpan untuk audit/export, tetapi MDR efektif diwarisi dari template sampai ada override eksplisit. Dengan demikian perubahan `template:PRO` otomatis berlaku ke seluruh tenant PRO tanpa menduplikasi konfigurasi per toko.
+All Admin, Flutter, Supabase RPC, synchronization, tests and verification documents must implement that same precedence.
+
+## Canonical configuration source
+
+Workbook:
+
+```text
+config/FINAL_Production_Excel_A_WebC_Template_100Tenants.xlsx
+```
+
+Workbook structure and `APP_CONFIG_EXPORT` are validated by:
+
+```text
+scripts/sync_excel_to_supabase.py
+```
+
+Expected canonical inventory:
+
+```text
+1   global
+3   templates
+100 tenants
+140 services
+108 devices
+---
+352 app_config keys
+```
+
+Canonical templates:
+
+```text
+BASIC
+PRO
+ENTERPRISE
+```
+
+Supabase configuration shape:
+
+```text
+app_config(key PRIMARY KEY, value JSONB, updated_at)
+```
+
+Canonical key forms:
+
+```text
+global
+template:<TEMPLATE_ID>
+tenant:<tenant_id>
+tenant:<tenant_id>:service:<service>
+device:<device_id>
+```
+
+For one effective-config request, only the requested service row is merged:
+
+```text
+global
+-> template:<tenant.template_id>
+-> tenant:<tenant_id>
+-> tenant:<tenant_id>:service:<service>
+-> device:<device_id>
+```
+
+## Final Pos tooling
+
+- Template Admin: https://berkah-ajb-dev.github.io/Berkahtigaputeri/btp-admin/final-pos-template-admin.html
+- Main Admin path: https://berkah-ajb-dev.github.io/Berkahtigaputeri/btp-admin/
+- Sync script: `scripts/sync_excel_to_supabase.py`
+- Sync workflow: `.github/workflows/final-pos-sync.yml`
+- Flutter app: `pos-app/`
+- Permanent architecture/verification docs: `docs/permanent/`
+
+## Engineering rules
+
+- Work through branches and pull requests; do not push implementation changes directly to `main`.
+- Do not restore an inheritance model that omits TEMPLATE.
+- Do not merge POS and Akuntansi service rows into one effective configuration.
+- Do not restore the legacy `app_config(device_id, key, value)` schema.
+- When documentation conflicts with `DOC_00_CANONICAL_ARCHITECTURE_DECISION.md`, the architecture decision is authoritative and the conflicting document must be corrected.
+
+Service rows derived from a template may remain present for audit/export. Template-inherited values remain inherited until an explicit lower-layer override is defined, so a template change can propagate without duplicating the same setting into every tenant.
