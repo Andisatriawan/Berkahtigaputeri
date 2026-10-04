@@ -32,8 +32,8 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p btp-admin config
-          gzip --decompress --stdout .final-pos-staging/admin.html.gz > btp-admin/final-pos-template-admin.html
-          cp .final-pos-staging/final.xlsx config/FINAL_Production_Excel_A_WebC_Template_100Tenants.xlsx
+          cat .final-pos-staging/admin.gz.b64.* | base64 --decode | gzip --decompress > btp-admin/final-pos-template-admin.html
+          cat .final-pos-staging/excel.b64.* | base64 --decode > config/FINAL_Production_Excel_A_WebC_Template_100Tenants.xlsx
           test -s btp-admin/final-pos-template-admin.html
           test -s config/FINAL_Production_Excel_A_WebC_Template_100Tenants.xlsx
           grep -q 'Berkah POS - FINAL PRODUCTION' btp-admin/final-pos-template-admin.html
@@ -41,6 +41,7 @@ jobs:
           from openpyxl import load_workbook
           p='config/FINAL_Production_Excel_A_WebC_Template_100Tenants.xlsx'
           wb=load_workbook(p, read_only=True, data_only=True)
+          assert wb.sheetnames == ['README_PRODUCTION','TEMPLATES','GLOBAL','TENANTS_MASTER','DEVICES','SERVICES','APP_CONFIG_EXPORT']
           assert wb['APP_CONFIG_EXPORT'].max_row == 353
           assert wb['TENANTS_MASTER'].max_row == 101
           assert wb['DEVICES'].max_row == 109
