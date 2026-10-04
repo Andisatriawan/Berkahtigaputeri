@@ -1,5 +1,7 @@
 -- DOC_05 FEATURE FLAGS UAT SEED
 -- Copy paste ini di Supabase SQL Editor. ChatGPT tidak menjalankan SQL ini langsung.
+-- Phase 6: every app_config seed has version=1 on first insert and preserves
+-- the existing positive version on conflict.
 
 insert into tenants (tenant_id, toko_name, paket, package_id, features, max_user, is_blocked)
 values
@@ -13,13 +15,21 @@ on conflict (tenant_id) do update set
   is_blocked = excluded.is_blocked,
   updated_at = now();
 
-insert into app_config (key, value, updated_at)
+insert into app_config as current_config (key, value, updated_at)
 values
   ('tenant:clientA:service:pos', '{"qris_enabled":true,"mdr":0.5,"qris_mdr":0.5,"version":1}'::jsonb, now()),
   ('tenant:clientB:service:pos', '{"qris_enabled":true,"mdr":0.7,"qris_mdr":0.7,"version":1}'::jsonb, now()),
   ('tenant:clientB:service:akuntansi', '{"auto_jurnal":true,"ppn_account":"2-2010","version":1}'::jsonb, now())
 on conflict (key) do update set
-  value = excluded.value,
+  value = (current_config.value || (excluded.value - 'version'))
+    || jsonb_build_object(
+      'version',
+      case
+        when coalesce(current_config.value ->> 'version', '') ~ '^[1-9][0-9]*$'
+          then (current_config.value ->> 'version')::integer
+        else 1
+      end
+    ),
   updated_at = excluded.updated_at;
 
 select tenant_id, features from tenants where tenant_id in ('clientA','clientB') order by tenant_id;

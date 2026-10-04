@@ -1,88 +1,92 @@
-# DOC_06 - AUDIT LOG + ANTI-TABRAKAN VERSIONING
+# DOC_06 — Audit & Atomic Versioning
 
-Status: **LIVE / P5** — diterapkan dan diverifikasi pada 2026-10-04.
+## Status
 
-## Fondasi audit LIVE
+Canonical Phase 6 contract for `public.app_config` writes.
 
-Tabel permanen:
+The configuration hierarchy remains:
 
-```text
-config_history(id, key, old_value, new_value, changed_by, changed_at, version)
-```
+`GLOBAL → TEMPLATE → TENANT → SERVICE → DEVICE`
 
-Trigger LIVE pada `app_config`:
+Every `app_config.value` JSON object must contain a positive integer `version`.
 
-```text
-trg_app_config_audit -> log_config_change()
-```
+## Atomic write contract
 
-`log_config_change()` berjalan sebagai `SECURITY INVOKER`, sehingga audit tidak menjadi bypass RLS. Write `app_config` tetap tunduk pada policy authenticated super admin dan setiap INSERT/UPDATE yang lolos dicatat ke `config_history`.
+Normal configuration updates do **not** perform a client-side read/check followed by `upsert`. That sequence is race-prone because two writers can observe the same version before either write commits.
 
-## Version contract
-
-Setiap `app_config.value` membawa integer `version`.
-
-Saat halaman editor load, UI menyimpan version yang dibaca. Tepat sebelum SAVE, UI membaca row database lagi:
-
-1. `loadedVersion` = version saat form dibuka/reload.
-2. `dbVersion` = version terkini tepat sebelum write.
-3. Jika sama, save boleh lanjut dan menulis `version = dbVersion + 1`.
-4. Jika berbeda, save **dibatalkan** dan UI menampilkan:
-
-> Config sudah diupdate orang lain, reload?
-
-Jika admin memilih reload, editor mengambil ulang konfigurasi terbaru sebelum admin melakukan perubahan lagi.
-
-Ini adalah optimistic concurrency check untuk mencegah silent overwrite ketika dua admin mengedit key yang sama.
-
-## Audit UI
-
-Buka:
-
-`/btp-admin/history.html?key=tenant:berkah_sumber`
-
-Halaman authenticated ini membaca `config_history` dan menampilkan:
-- version
-- changed_at
-- changed_by
-- old_value
-- new_value
-
-## Verifikasi LIVE P5
-
-Pada 2026-10-04 dilakukan SAVE terkontrol pada:
-
-```text
-tenant:berkah_sumber
-```
-
-Hasil:
-
-```text
-old version = 1
-new version = 2
-changed_by = satria@berkahtigaputeri.com
-```
-
-Record tersebut tercatat otomatis oleh trigger pada `config_history`, membuktikan setiap SAVE `app_config` yang berhasil menghasilkan audit record.
-
-SQL verifikasi:
+The canonical write API is:
 
 ```sql
-select key, version, changed_by, changed_at, old_value, new_value
-from config_history
-where key = 'tenant:berkah_sumber'
-order by changed_at desc
-limit 20;
+public.update_app_config_atomic(
+  key text,
+  new_value jsonb,
+  expected_version integer
+)
 ```
 
-## Acceptance anti-tabrakan dua admin/tab
+The RPC performs one PostgreSQL `UPDATE` whose predicate includes both the key and the expected version:
 
-1. Buka tenant yang sama di Tab A dan Tab B.
-2. Keduanya load version yang sama.
-3. SAVE di Tab A -> version bertambah.
-4. Tanpa reload Tab B, klik SAVE.
-5. Tab B membandingkan `dbVersion` dengan `loadedVersion`.
-6. Jika berbeda, write dibatalkan dan muncul `Config sudah diupdate orang lain, reload?`.
+```sql
+UPDATE public.app_config
+SET value = (new_value - 'version')
+      || jsonb_build_object('version', expected_version + 1),
+    updated_at = now()
+WHERE app_config.key = key
+  AND (app_config.value ->> 'version')::integer = expected_version;
+```
 
-Implementasi berada di `btp-admin/editor-core.js`; history UI berada di `btp-admin/history.html`.
+Therefore only one concurrent writer can win for a given loaded version. A stale writer receives SQLSTATE `40001` with a `VERSION_CONFLICT` message and must reload before retrying.
+
+The client does not control the stored version. Any `version` supplied inside `new_value` is removed; the server writes exactly `expected_version + 1`.
+
+## Client behavior
+
+Admin, Template Admin, and workbook synchronization use the same semantics:
+
+1. load the current row and its positive integer `value.version`;
+2. send the desired JSON value plus that loaded version as `expected_version`;
+3. accept the server-returned row/version on success;
+4. on `40001`, do not overwrite—reload the latest value and let the operator retry intentionally.
+
+Bootstrap insertion is the only exception: a genuinely missing canonical key may be inserted once with `version: 1`. Subsequent updates use the atomic RPC.
+
+## Seed rule
+
+Every seed must contain `"version": 1` on first insert. An `ON CONFLICT DO UPDATE` seed must preserve the database's current version rather than resetting it to 1.
+
+Safe pattern:
+
+```sql
+INSERT INTO public.app_config AS current_config (key, value, updated_at)
+VALUES (
+  'example:key',
+  '{"enabled":true,"version":1}'::jsonb,
+  now()
+)
+ON CONFLICT (key) DO UPDATE SET
+  value = (current_config.value || (excluded.value - 'version'))
+    || jsonb_build_object(
+      'version',
+      CASE
+        WHEN coalesce(current_config.value ->> 'version', '') ~ '^[1-9][0-9]*$'
+          THEN (current_config.value ->> 'version')::integer
+        ELSE 1
+      END
+    ),
+  updated_at = excluded.updated_at;
+```
+
+`DOC_02_SUPABASE_SCHEMA_V1.sql` and `DOC_05_FEATURE_FLAGS.sql` follow this invariant.
+
+## Audit history
+
+`trg_app_config_audit` continues to record `old_value`, `new_value`, actor, timestamp, and the new version after an insert/update. Because the RPC writes the incremented version in the same database statement, audit rows observe the committed version transition rather than a client-side guess.
+
+## Acceptance checks
+
+- legacy rows with missing/invalid versions are normalized once to version 1;
+- an atomic write at version `N` returns version `N+1`;
+- a second write with stale `expected_version=N` fails with SQLSTATE `40001`;
+- anonymous callers cannot execute the RPC;
+- authenticated Admin and service-role synchronization can execute it subject to their existing RLS/role privileges;
+- seeds never reset a newer version to 1.
