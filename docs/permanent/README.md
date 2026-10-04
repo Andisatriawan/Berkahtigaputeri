@@ -1,37 +1,83 @@
-# DOCS PERMANENT - PERSISTENCE UNTUK AI AGENT
+# DOCS PERMANENT - FINAL POS ARCHITECTURE AUTHORITY
 
-Folder ini adalah **single source of truth** untuk semua AI/Agent karena context window ChatGPT terbatas.
+This folder contains the durable architecture, security, schema, operational and verification record for Berkah POS.
 
-Setiap AI baru yang masuk repo HARUS baca folder ini dulu.
+## Read order
 
-## Daftar Dokumen (Akumulasi, Jangan Hapus):
+Every engineer or AI agent must start with:
 
-- DOC_00_MASTER_ROADMAP.md - Master roadmap + prioritas eksekusi tanpa berhenti
-- DOC_01_3_LAYER_CONFIG.md - Arsitektur 3 layer GLOBAL, TENANT, DEVICE + 2 layanan beda
-- DOC_02_SUPABASE_SCHEMA_V1.sql - SQL schema v1.0 siap run di Supabase
-- DOC_03_RLS_AUTH.sql - RLS + Auth super admin
-- DOC_04_ADMIN_ARCHITECTURE.md - Arsitektur admin SaaS scale banyak clients
-- DOC_05_FEATURE_FLAGS.md (akan datang - Prioritas 4)
-- DOC_06_AUDIT_VERSIONING.md (akan datang - Prioritas 5)
+1. `DOC_00_CANONICAL_ARCHITECTURE_DECISION.md` - sole authority for Final Pos configuration inheritance.
+2. `DOC_00_MASTER_ROADMAP.md` - ordered correction and delivery roadmap.
+3. `DOC_01_3_LAYER_CONFIG.md` - legacy filename, now rewritten as the Final Pos config contract.
+4. `DOC_02_SUPABASE_SCHEMA_V1.sql` and `DOC_02_VERIFICATION.md` - schema and verification baseline.
+5. `DOC_03_RLS_AUTH.sql` and `DOC_03_VERIFICATION.md` - RLS/auth baseline.
+6. `DOC_04_ADMIN_ARCHITECTURE.md` and `DOC_04_VERIFICATION.md` - Admin architecture and verification.
+7. `DOC_05_FEATURE_FLAGS.md` / `DOC_05_FEATURE_FLAGS.sql` - service/feature configuration.
+8. `DOC_06_AUDIT_VERSIONING.md` - audit and versioning contract.
+9. `DOC_07_FINAL_VERIFICATION.md` - existing verification record pending historical archival/re-certification in the correction roadmap.
+10. `DOC_08_RPC_EFFECTIVE_CONFIG.sql` - effective-config RPC.
+11. `DOC_09_APK_VERIFICATION.md` - APK/config verification, pending canonical-auth updates in later correction phases.
 
-## Cara Pakai:
+When an older document conflicts with `DOC_00_CANONICAL_ARCHITECTURE_DECISION.md`, the architecture decision wins and the conflicting document must be corrected.
 
-1. Buka DOC_00 dulu - lihat prioritas mana yang belum LIVE
-2. Kerjakan prioritas itu sampai LIVE (screenshot verifikasi)
-3. Baru lanjut prioritas next
-4. Jangan kerjakan semua sekaligus
+## Canonical Final Pos model
 
-## Live URL:
+```text
+GLOBAL -> TEMPLATE -> TENANT -> SERVICE -> DEVICE
+```
+
+Canonical workbook:
+
+```text
+config/FINAL_Production_Excel_A_WebC_Template_100Tenants.xlsx
+```
+
+Workbook structure is validated by `scripts/sync_excel_to_supabase.py`; do not infer its binary contents through the GitHub text API.
+
+Canonical `APP_CONFIG_EXPORT` inventory:
+
+```text
+1 global + 3 templates + 100 tenants + 140 services + 108 devices = 352 keys
+```
+
+Canonical key forms:
+
+```text
+global
+template:<TEMPLATE_ID>
+tenant:<tenant_id>
+tenant:<tenant_id>:service:<service>
+device:<device_id>
+```
+
+Canonical schema shape:
+
+```text
+app_config(key PRIMARY KEY, value JSONB, updated_at)
+```
+
+## Effective-config rule
+
+For one `(tenant_id, device_id, service)` request, resolve and merge only:
+
+```text
+global
+template:<tenant.template_id>
+tenant:<tenant_id>
+tenant:<tenant_id>:service:<service>
+device:<device_id>
+```
+
+POS and Akuntansi service rows are not combined into the same effective configuration.
+
+## Repository operating rule
+
+- Make implementation changes on a branch and merge through review/PR.
+- Do not treat a historical commit as a permanently frozen architecture authority.
+- Do not restore any inheritance model that omits TEMPLATE.
+- Keep historical verification only when clearly labelled historical.
+- Keep `btp-admin/` as the published Admin path.
+
+## Live Admin
 
 https://berkah-ajb-dev.github.io/Berkahtigaputeri/btp-admin/
-
-## Schema Penting:
-
-app_config(key PRIMARY KEY, value JSONB, updated_at)
-- key='global'
-- key='tenant:<tenant_id>'
-- key='tenant:<tenant_id>:service:pos'
-- key='tenant:<tenant_id>:service:akuntansi'
-- key='device:<device_id>'
-
-Inheritance: GLOBAL -> TENANT -> DEVICE
