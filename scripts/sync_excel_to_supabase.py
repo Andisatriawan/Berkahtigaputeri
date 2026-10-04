@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# FINAL POS production sync entrypoint (REST-only; app_config.key upsert).
 import json
 import os
 import sys
