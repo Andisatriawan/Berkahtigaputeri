@@ -1,4 +1,4 @@
-name: vibe-build
+name: 02 · UAT Infinix Release APK
 
 on: [push, pull_request]
 
