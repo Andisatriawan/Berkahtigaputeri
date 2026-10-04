@@ -42,7 +42,19 @@ jobs:
           test -f config/FINAL_Production_Excel_A_WebC_Template_100Tenants.xlsx
           ls -lh config/FINAL_Production_Excel_A_WebC_Template_100Tenants.xlsx
 
+      - name: Validate workbook contract (always)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/sync_excel_to_supabase.py --dry-run
+
+      - name: PR - skipping secrets check, dry-run only
+        if: github.event_name == 'pull_request'
+        shell: bash
+        run: echo 'PR - skipping secrets check, dry-run only'
+
       - name: Require Supabase sync secrets
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         shell: bash
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -55,6 +67,7 @@ jobs:
           fi
 
       - name: Sync workbook-owned data to Supabase
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         shell: bash
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -63,15 +76,14 @@ jobs:
           set -euo pipefail
           python3 scripts/sync_excel_to_supabase.py
 
-      - name: Post-sync verify workbook contract and app_config exact count
+      - name: Verify remote app_config exact count is 352
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         shell: bash
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
         run: |
           set -euo pipefail
-
-          python3 scripts/sync_excel_to_supabase.py --dry-run
 
           headers_file="$(mktemp)"
           trap 'rm -f "$headers_file"' EXIT
