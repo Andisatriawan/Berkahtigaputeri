@@ -32,7 +32,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p btp-admin config
-          cat .final-pos-staging/admin.b64.* | base64 --decode > btp-admin/final-pos-template-admin.html
+          cat .final-pos-staging/admin.gz.b64.* | base64 --decode | gzip --decompress > btp-admin/final-pos-template-admin.html
           cat .final-pos-staging/excel.b64.* | base64 --decode > config/FINAL_Production_Excel_A_WebC_Template_100Tenants.xlsx
           test -s btp-admin/final-pos-template-admin.html
           test -s config/FINAL_Production_Excel_A_WebC_Template_100Tenants.xlsx
