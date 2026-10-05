@@ -208,7 +208,7 @@ class _SettingsCard extends StatelessWidget {
             ),
             const SizedBox(height: 12),
             DropdownButtonFormField<String>(
-              value: tenantId,
+              initialValue: tenantId,
               decoration: const InputDecoration(
                 labelText: 'tenant_id',
                 border: OutlineInputBorder(),
