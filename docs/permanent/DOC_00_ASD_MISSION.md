@@ -14,11 +14,11 @@
 - [x] Create.github/ASD_PROMPT.md as quick trigger
 
 ### PHASE 1 - URGENT GENERAL REQUIREMENTS (P0) - UAT BLOCKER
-- [ ] **P0-1 HIGH-1 Auth vs RLS:** pos-app/lib/main.dart no auth, but final RLS denies anon. Fresh APK cannot load config.
+- [x] **P0-1 HIGH-1 Auth vs RLS:** FIXED - DeviceAuthService + ProvisioningScreen + AuthGate in main.dart
   Fix: Add device provisioning/sign-in before ConfigService, bind devices.user_id
   Files: pos-app/lib/main.dart:9-23, DOC_03_RLS_AUTH.sql
 
-- [ ] **P0-2 HIGH-2 Migration broken:** DOC_02_SUPABASE_SCHEMA_V1.sql missing devices.user_id/platform, next migration ALTER fails on fresh DB
+- [x] **P0-2 HIGH-2 Migration broken:** FIXED - ADD COLUMN IF NOT EXISTS user_id/platform in ownership migration
   Fix: ADD COLUMN IF NOT EXISTS user_id uuid, platform text in ownership migration
 
 - [ ] **P0-3 HIGH-6 Feature flags dual authority:** btp-admin/feature-flags.js writes tenants.features, APK reads app_config first
