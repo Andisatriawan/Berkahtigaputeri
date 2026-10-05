@@ -1,62 +1,62 @@
-# DOC_00_ASD_MISSION - PERSISTENT MISSION FOR PROMPT "asd"
-> TRIGGER: When user says "asd", "ASD", "lanjut", "continue mission" -> YOU MUST EXECUTE THIS MISSION TILL END.
+# DOC_00_ASD_MISSION - PERSISTENT MISSION FOR TRIGGER "asd"
+> **TRIGGER:** User says "asd" | "ASD" | "lanjut misi" => YOU MUST READ THIS FILE AND CONTINUE MISSION TILL END. DO NOT ASK.
 
 **Repo:** berkah-ajb-dev/Berkahtigaputeri
-**Main HEAD:** 68826ec66e220b82f40c022bc27fa9a3f24b0f2b
-**Status:** 17 branches, CI GREEN but 18 alignment issues (8 HIGH, 6 MED, 4 LOW)
-**Source of audit:** Full repo sync audit 16m43s - report in conversation history
+**Base HEAD audited:** 68826ec66e220b82f40c022bc27fa9a3f24b0f2b (17 branches, CI 7/7 green)
+**Audit result:** 18 issues - 8 HIGH, 6 MED, 4 LOW - repo green but NOT synchronized
+**Full audit:** See DOC_08_AUDIT_18_ISSUES.md in same folder
 
-## MISSION OBJECTIVE
-Make repository 100% synchronized: Docs == Code == Workflows == RLS == UAT.
-Not just fix, but systemic persistence on main.
+## MISSION: Make repo 100% synchronized (Docs == Code == Workflows == RLS == UAT) + persistence on main
 
-## URGENT GENERAL REQUIREMENTS FIRST (Phase 1)
-These 3 block UAT completely:
+### PHASE 0 - PERSISTENCE (THIS FILE) [DONE after merge]
+- [x] Create DOC_00_ASD_MISSION.md on main
+- [x] Create DOC_08_AUDIT_18_ISSUES.md
+- [x] Create.github/ASD_PROMPT.md as quick trigger
 
-**[P0-1] HIGH-1 Auth vs RLS:** pos-app/lib/main.dart has no auth, but final RLS denies anon.
--> Fix: Create device provisioning flow before ConfigService, bind devices.user_id
+### PHASE 1 - URGENT GENERAL REQUIREMENTS (P0) - UAT BLOCKER
+- [ ] **P0-1 HIGH-1 Auth vs RLS:** pos-app/lib/main.dart no auth, but final RLS denies anon. Fresh APK cannot load config.
+  Fix: Add device provisioning/sign-in before ConfigService, bind devices.user_id
+  Files: pos-app/lib/main.dart:9-23, DOC_03_RLS_AUTH.sql
 
-**[P0-2] HIGH-2 Migration broken:** DOC_02_SUPABASE_SCHEMA_V1.sql missing devices.user_id/platform but next migration ALTERs them
--> Fix: Make migration ADD COLUMN IF NOT EXISTS
+- [ ] **P0-2 HIGH-2 Migration broken:** DOC_02_SUPABASE_SCHEMA_V1.sql missing devices.user_id/platform, next migration ALTER fails on fresh DB
+  Fix: ADD COLUMN IF NOT EXISTS user_id uuid, platform text in ownership migration
 
-**[P0-3] HIGH-6 Feature flags dual authority:** Admin writes tenants.features, APK reads app_config
--> Fix: Move Admin to update_app_config_atomic RPC, keep tenants.features as projection only
+- [ ] **P0-3 HIGH-6 Feature flags dual authority:** btp-admin/feature-flags.js writes tenants.features, APK reads app_config first
+  Fix: Admin must use update_app_config_atomic RPC, tenants.features = projection only
 
-## PHASE 2 - HIGH REMAINING
-- [P1-4] DOC_02/DOC_04 verification still 3-layer, need 5-layer: GLOBAL->TEMPLATE->TENANT->SERVICE->DEVICE
-- [P1-5] DOC_03 verification expects anon SELECT allowed but RLS denies
-- [P1-6] DOC_07_FINAL_VERIFICATION_CURRENT_HEAD.md points to deleted branch fix/final-pos-canonical-sync, not main@68826ec
-- [P1-7] Doc-Workflow fail-closed overstated - PRs skip live secret check
+### PHASE 2 - HIGH (Doc-Doc / Doc-Workflow)
+- [ ] P1-4 DOC_02_VERIFICATION.md still 3-layer, need 5-layer GLOBAL->TEMPLATE->TENANT->SERVICE->DEVICE
+- [ ] P1-5 DOC_03_VERIFICATION.md expects anon SELECT allowed but RLS denies
+- [ ] P1-6 DOC_04_VERIFICATION.md counts 5 keys with POS+Akuntansi together, missing TEMPLATE
+- [ ] P1-7 DOC_07_FINAL_VERIFICATION_CURRENT_HEAD.md points to deleted branch fix/final-pos-canonical-sync, not main@68826ec
+- [ ] P1-8 DOC_07 overstates fail-closed: PRs skip live Supabase check (final-pos-sync.yml dry-run only)
 
-## PHASE 3 - MEDIUM (Parity)
-- [P2] config_service.dart fallback not normalize service (POS vs pos)
-- [P2] inherited_from_template null vs empty string parity
-- [P2] config_service_test.dart still tests 4 layers not 5
-- [P2] DOC_05_FEATURE_FLAGS.sql bypasses atomic RPC
-- [P2] legacy sync_excel_to_supabase_legacy.py bypasses versioning
+### PHASE 3 - MEDIUM (Parity bugs)
+- [ ] MED-10 config_service.dart fallback not normalize service (POS vs pos) - add normalizeService()
+- [ ] MED-11 inherited_from_template null vs empty string parity Flutter vs SQL
+- [ ] MED-12 config_service_test.dart tests only 4 layers, missing TEMPLATE
+- [ ] MED-13 DOC_05_FEATURE_FLAGS.sql uses INSERT ON CONFLICT instead of atomic RPC
+- [ ] MED-14 scripts/sync_excel_to_supabase_legacy.py bypasses versioning
 
-## PHASE 4 - LOW
-- [P3] home_screen.dart string "config 3 layer" -> "5 layer"
-- [P3] app_version='a19cb3f' legacy seed
-- [P3] build.yml Flutter not pinned, main.dart hardcoded defaults
+### PHASE 4 - LOW (Reproducibility)
+- [ ] LOW-15 home_screen.dart:269 "config 3 layer" -> "5 layer"
+- [ ] LOW-16 devices app_version='a19cb3f' legacy seed vs pubspec 1.0.0+2
+- [ ] LOW-17 build.yml Flutter channel: stable not pinned
+- [ ] LOW-18 main.dart hardcoded SUPABASE defaults, no.env.example / dart-define
 
-## EXECUTION PROTOCOL FOR "asd"
-1. git fetch --prune && git checkout main && git pull --ff-only
-2. Read this file + docs/permanent/DOC_07_FINAL_VERIFICATION_CURRENT_HEAD.md + audit report
-3. Pick next unchecked item from PHASE 1 -> 2 -> 3 -> 4
-4. Fix code/docs/workflows accordingly
-5. Update this file: check [x] and add log entry below
-6. Commit: git add -A && git commit -m "fix(asd): [P0-1] description" && git push origin main
-7. Run: gh run list --branch main --limit 3
-8. If not all done, continue loop. NEVER stop at 1 fix.
+### EXECUTION PROTOCOL FOR "asd"
+1. cd ~/Berkahtigaputeri && git fetch --prune && git checkout main && git pull
+2. Read DOC_00_ASD_MISSION.md + DOC_08_AUDIT_18_ISSUES.md + DOC_07
+3. Pick first unchecked [ ] from P0 -> P1 -> P2 -> P3
+4. Fix CODE + DOCS + WORKFLOW together (systemic)
+5. Update this file [x] + add log below with new SHA
+6. Commit + push to main via PR admin merge
+7. Verify gh run list --branch main 7/7 green
+8. LOOP until all [x]
 
-## STATE LOG
-- [x] 2026-10-05 main@68826ec audit 18 issues found, CI green
-- [x] 2026-10-05 cleanup 27->17 branches, main tracking fixed
-- [ ] P0-1 auth provisioning - TODO
-- [ ] P0-2 migration self-contained - TODO
-- [ ] P0-3 feature flags authority - TODO
--... (update as you go)
+### STATE LOG
+- 2026-10-05 00:22Z main@68826ec audit 18 issues, 27->17 branches cleaned, CI green
+- 2026-10-05 P0 mission doc created - next: P0-1 auth
 
-## DONE CRITERIA
-All 18 issues checked [x], fresh DB rebuild works, fresh APK can auth -> config, Admin toggle == APK value, DOC_07 recertified at new main SHA, gh pr checks 7/7 green.
+### DONE CRITERIA
+All [ ] -> [x], fresh DB rebuild passes, fresh APK auth->config, Admin toggle == APK, DOC_07 recertified, CI 7/7 green.
