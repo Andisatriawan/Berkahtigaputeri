@@ -7,7 +7,8 @@ permissions:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, btp-ci]
+    timeout-minutes: 60
     defaults:
       run:
         working-directory: pos-app
@@ -17,17 +18,29 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Secret scan (Gitleaks full history)
         shell: bash
         working-directory: .
         run: |
           set -euo pipefail
-          docker run --rm \
-            -v "$PWD:/repo" \
+          export XDG_RUNTIME_DIR="/run/user/$(id -u)"
+          podman run --rm \
+            -v "$PWD:/repo:Z" \
             -w /repo \
             ghcr.io/gitleaks/gitleaks:v8.30.1 \
             detect --source . --log-opts="--all" --redact -v
+
+      - name: Verify Fedora host dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          java -version
+          javac -version
+          sqlite3 --version
+          test -f /usr/include/sqlite3.h
+          podman --version
 
       - name: Setup Java
         uses: actions/setup-java@v4
@@ -35,16 +48,22 @@ jobs:
           distribution: zulu
           java-version: '17'
 
-      - name: Install SQLite FFI dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libsqlite3-dev
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4.0.4
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
           channel: stable
           cache: true
+
+      - name: Verify mobile toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          flutter --version
+          sdkmanager --version
+          flutter doctor -v
 
       - name: Prepare Android project
         shell: bash
