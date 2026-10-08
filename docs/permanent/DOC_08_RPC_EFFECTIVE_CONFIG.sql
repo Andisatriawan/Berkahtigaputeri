@@ -1,16 +1,15 @@
 -- DOC_08 - RPC EFFECTIVE CONFIG / FINAL POS
 -- Canonical inheritance: GLOBAL -> TEMPLATE -> TENANT -> SERVICE -> DEVICE
 --
--- FINAL AUTH CONTRACT:
--- - anon has NO direct SELECT on tenants/devices/licences/app_config/tenant_services;
--- - anon has NO EXECUTE on get_effective_config(...);
--- - authenticated non-admin callers must own p_device through devices.user_id = auth.uid();
--- - every caller must provide a device that belongs to p_tenant;
--- - service_role is the trusted server-side exception for workbook sync/verification;
--- - SECURITY DEFINER is retained only to resolve protected layers after explicit authorization;
--- - search_path is empty and all relations are schema-qualified.
---
--- Service rows marked inherited_from_template do not override template MDR aliases.
+-- AUTH CONTRACT:
+-- - anon has NO direct SELECT on tenant/device/licence/app_config metadata;
+-- - authenticated device callers may direct-read only their exact device:<device_id> app_config row;
+-- - GLOBAL/TEMPLATE/TENANT/SERVICE are resolved only inside this SECURITY DEFINER RPC;
+-- - every call validates device_id -> tenant_id and device ownership;
+-- - canonical super admin is berkahtigaputeri@gmail.com / UID 49abb5d4-8616-45d3-b2cb-8e0dcb72f100;
+-- - service_role is the trusted server-side exception;
+-- - the immutable 352-key inventory is asserted before resolution;
+-- - missing canonical layers fail closed.
 
 create or replace function public.get_effective_config(
   p_tenant text,
@@ -22,89 +21,73 @@ security definer
 set search_path = ''
 as $$
 declare
-  result jsonb := '{}'::jsonb;
-  tenant_cfg jsonb := '{}'::jsonb;
-  template_cfg jsonb := '{}'::jsonb;
-  service_cfg jsonb := '{}'::jsonb;
-  device_cfg jsonb := '{}'::jsonb;
-  global_cfg jsonb := '{}'::jsonb;
-  template_id text;
-  requested_service text := lower(trim(coalesce(p_service, '')));
-  caller_uid uuid := auth.uid();
-  caller_email text := lower(coalesce(auth.jwt() ->> 'email', ''));
-  caller_role text := lower(coalesce(auth.jwt() ->> 'role', ''));
+  g jsonb;
+  t jsonb;
+  x jsonb;
+  s jsonb;
+  d jsonb;
+  tid text;
+  svc text := lower(trim(coalesce(p_service, '')));
+  uid uuid := auth.uid();
+  role_name text := lower(coalesce(auth.jwt()->>'role', ''));
 begin
+  perform private.assert_app_config_inventory();
+
   if nullif(trim(coalesce(p_tenant, '')), '') is null
-     or nullif(trim(coalesce(p_device, '')), '') is null then
-    raise exception 'tenant and device are required' using errcode = '22023';
+     or nullif(trim(coalesce(p_device, '')), '') is null
+     or svc not in ('pos', 'akuntansi') then
+    raise exception 'invalid tenant/device/service' using errcode = '22023';
   end if;
 
-  if requested_service not in ('pos', 'akuntansi') then
-    raise exception 'invalid service' using errcode = '22023';
-  end if;
-
-  if caller_role <> 'service_role' and caller_uid is null then
+  if role_name <> 'service_role' and uid is null then
     raise exception 'authentication required' using errcode = '42501';
   end if;
 
   if not exists (
-    select 1 from public.devices d
-    where d.device_id = p_device
-      and d.tenant_id = p_tenant
+    select 1 from public.devices z
+    where z.device_id = p_device and z.tenant_id = p_tenant
   ) then
     raise exception 'device does not belong to tenant' using errcode = '42501';
   end if;
 
-  if caller_role <> 'service_role'
-     and caller_email <> 'satria@berkahtigaputeri.com'
+  if role_name <> 'service_role'
+     and not private.btp_is_super_admin()
      and not exists (
-       select 1 from public.devices d
-       where d.device_id = p_device
-         and d.tenant_id = p_tenant
-         and d.user_id = caller_uid
+       select 1 from public.devices z
+       where z.device_id = p_device
+         and z.tenant_id = p_tenant
+         and z.user_id = uid
      ) then
     raise exception 'caller is not authorized for device' using errcode = '42501';
   end if;
 
-  select value into global_cfg from public.app_config where key = 'global';
-  select value into tenant_cfg from public.app_config where key = 'tenant:' || p_tenant;
-  template_id := coalesce(tenant_cfg->>'template_id', tenant_cfg->>'template');
+  select value into strict g from public.app_config where key = 'global';
+  select value into strict t from public.app_config where key = 'tenant:' || p_tenant;
 
-  if template_id is not null and trim(template_id) <> '' then
-    select value into template_cfg
-    from public.app_config
-    where key = 'template:' || upper(trim(template_id));
+  tid := upper(trim(coalesce(t->>'template_id', t->>'template', '')));
+  if tid = '' then
+    raise exception 'tenant template assignment missing' using errcode = '23514';
   end if;
 
-  select value into service_cfg
-  from public.app_config
-  where key = 'tenant:' || p_tenant || ':service:' || requested_service;
+  select value into strict x from public.app_config where key = 'template:' || tid;
+  select value into strict s from public.app_config where key = 'tenant:' || p_tenant || ':service:' || svc;
+  select value into strict d from public.app_config where key = 'device:' || p_device;
 
-  if service_cfg ? 'inherited_from_template'
-     and nullif(service_cfg->>'inherited_from_template', '') is not null then
-    service_cfg := service_cfg - 'mdr' - 'mdr_pos' - 'qris_mdr' - 'mdr_%';
+  if nullif(trim(coalesce(s->>'inherited_from_template', '')), '') is not null then
+    s := s - 'mdr' - 'mdr_pos' - 'qris_mdr' - 'mdr_%';
   end if;
 
-  select value into device_cfg
-  from public.app_config
-  where key = 'device:' || p_device;
-
-  result := coalesce(global_cfg, '{}'::jsonb)
-    || coalesce(template_cfg, '{}'::jsonb)
-    || coalesce(tenant_cfg, '{}'::jsonb)
-    || coalesce(service_cfg, '{}'::jsonb)
-    || coalesce(device_cfg, '{}'::jsonb);
-
-  return result;
+  return g || x || t || s || d;
+exception when no_data_found then
+  raise exception 'missing canonical five-layer app_config row' using errcode = '23514';
 end;
 $$;
 
-revoke execute on function public.get_effective_config(text, text, text) from public;
-revoke execute on function public.get_effective_config(text, text, text) from anon;
+revoke execute on function public.get_effective_config(text, text, text) from public, anon;
 grant execute on function public.get_effective_config(text, text, text) to authenticated, service_role;
 
 -- Acceptance:
--- anon direct table SELECT => denied.
--- anon RPC EXECUTE => denied.
--- authenticated caller + owned device + matching tenant => succeeds.
--- mismatched device/tenant or unowned device => 42501.
+-- app_config inventory = 352 and keyset MD5 = 1fd3d64219ecc7c333453c20da80e295.
+-- direct authenticated device SELECT cannot read global/template/tenant/service rows.
+-- canonical owned device resolves exactly one requested service.
+-- missing layer, mismatched tenant/device, or unauthorized caller fails closed.

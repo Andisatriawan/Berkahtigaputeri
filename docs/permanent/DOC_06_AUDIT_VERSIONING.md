@@ -26,42 +26,43 @@ Do not implement client-side `read version → compare → upsert`. That sequenc
 
 The canonical function is defined by `DOC_06_ATOMIC_VERSIONING_RPC.sql`. It:
 
-1. locks the requested row with `SELECT ... FOR UPDATE`;
-2. fails with `P0002` if the key does not exist;
-3. reads the locked row's current positive integer `version`;
-4. fails with SQLSTATE `40001` when it differs from `p_expected_version`;
-5. overwrites any caller-supplied `version` with `p_expected_version + 1`;
-6. updates with a second `WHERE version = p_expected_version` guard;
-7. fails with SQLSTATE `40001` if that guarded update does not affect a row;
-8. returns the stored JSON value, including the new version.
+1. asserts the immutable canonical `app_config` inventory before writing;
+2. authorizes the requested key with `private.can_write_app_config(p_key)`;
+3. locks the requested row with `SELECT ... FOR UPDATE`;
+4. fails with `P0002` if the key does not exist;
+5. validates the current positive integer `version`;
+6. fails with SQLSTATE `40001` when it differs from `p_expected_version`;
+7. overwrites any caller-supplied `version` with `p_expected_version + 1`;
+8. updates with a second `WHERE version = p_expected_version` guard;
+9. keeps tenant/device relational projections aligned when those layers change;
+10. returns the stored JSON value, including the new version.
 
 Because the row is locked before the comparison, two transactions starting with the same expected version cannot both succeed. One acquires the row lock and writes `N+1`; the other waits, then sees `N+1` and fails with `40001` when it resumes.
 
 ## Authorization
 
-The RPC is `SECURITY DEFINER SET search_path = ''` and is granted to `authenticated` and `service_role` for PostgREST exposure.
+The RPC is `SECURITY DEFINER SET search_path = ''` and is exposed only to `authenticated` and `service_role`.
 
-`SECURITY DEFINER` must not weaken Phase 5 isolation. The function therefore performs an internal authorization guard:
+`SECURITY DEFINER` must not weaken tenant isolation. Authorization is therefore enforced inside `private.can_write_app_config(p_key)`:
 
-- `service_role` JWT: allowed for controlled administrative synchronization;
-- canonical authenticated admin `satria@berkahtigaputeri.com`: allowed;
-- ordinary authenticated device users: rejected with `42501`.
+- `service_role`: trusted server-side administrative synchronization;
+- canonical super admin: `berkahtigaputeri@gmail.com`, UID `49abb5d4-8616-45d3-b2cb-8e0dcb72f100`;
+- POS tenant `owner`: may replace that tenant layer and authorized lower layers;
+- POS tenant `owner` / `manager`: may replace the tenant's service rows and device rows allowed by the helper;
+- device owner: may replace only the exact `device:<device_id>` bound to `auth.uid()`;
+- unrelated authenticated users and `anon`: denied.
 
-`anon` has no execute grant.
+Template assignment on a tenant row is additionally protected: only `service_role` or the canonical super admin may change the tenant's template assignment.
 
 ## Admin behavior
 
 Classic Admin and Template Admin load the current positive `value.version` and call the RPC directly with the corresponding `p_expected_version`.
 
-On SQLSTATE `40001`, the UI must not overwrite server state. It reloads the latest row and displays:
-
-> Data changed by another admin, please reload
-
-The client never assigns the stored version itself.
+On SQLSTATE `40001`, the UI must not overwrite server state. It reloads the latest row and displays a conflict/reload message. The client never assigns the stored version itself.
 
 ## Workbook synchronization
 
-`scripts/sync_excel_to_supabase.py` is a **versioned administrative replacement** operation.
+`scripts/sync_excel_to_supabase.py` is a versioned administrative replacement operation.
 
 For every workbook-owned `app_config` key:
 
@@ -70,25 +71,13 @@ For every workbook-owned `app_config` key:
 - normal mode → fail closed if another writer changes the key after the importer read it;
 - `--force-version` → explicitly refresh the latest live version after `40001` and retry the same atomic RPC.
 
-`--force-version` does **not** disable compare-and-swap and does not accept a caller-chosen target version. It only authorizes the administrative importer to replace a row after refreshing the newest version; the server still performs the lock/check/bump atomically.
+`--force-version` does **not** disable compare-and-swap and does not accept a caller-chosen target version.
 
 ## Bootstrap and seed rule
 
-A genuinely missing canonical key may be inserted at `version: 1`. This is the only bootstrap exception to the update-RPC rule.
+A genuinely missing canonical key may be inserted at `version: 1`. Production authority is the canonical workbook and its exact 352-key export, not illustrative legacy bootstrap rows.
 
-All `app_config` `INSERT` seeds in `DOC_02_SUPABASE_SCHEMA_V1.sql` include `"version": 1`.
-
-`DOC_05_FEATURE_FLAGS.sql` also inserts at version `1`, but an `ON CONFLICT DO UPDATE` represents another semantic write and therefore stores the existing database version plus one:
-
-```sql
-value = (excluded.value - 'version')
-  || jsonb_build_object(
-    'version',
-    (app_config.value ->> 'version')::integer + 1
-  )
-```
-
-A conflict must never reset a newer row to version `1`.
+Any seed or migration that conflicts with an existing newer version must not reset it to `1`.
 
 ## Audit history
 
@@ -98,13 +87,12 @@ A conflict must never reset a newer row to version `1`.
 
 Phase 6 is green only when all of the following are true:
 
+- canonical inventory remains exactly 352 keys with keyset MD5 `1fd3d64219ecc7c333453c20da80e295`;
 - every canonical `app_config` row has a positive integer version;
 - wrong `p_expected_version` fails with SQLSTATE `40001`;
 - correct `p_expected_version=N` succeeds with stored `version=N+1`;
 - a stale second writer using the same `N` fails with `40001`;
-- row locking guarantees two concurrent callers using the same `N` cannot both succeed;
 - caller-supplied `version` cannot override the server-generated version;
-- Admin and Template Admin use the RPC rather than direct `app_config` upsert;
-- workbook replacement bumps existing rows and bootstraps only missing rows at version `1`;
-- `--force-version` refreshes and retries conflicts without disabling CAS;
-- `DOC_02` and `DOC_05` seeds cannot reset a newer version to `1`.
+- unauthorized identities cannot write another tenant/device layer;
+- tenant template assignment cannot be changed by ordinary tenant/device roles;
+- Admin and workbook replacement use the RPC rather than direct replacement writes.
