@@ -7,7 +7,7 @@ permissions:
 
 jobs:
   build:
-    runs-on: [self-hosted, Linux, X64, btp-ci]
+    runs-on: [self-hosted, Linux, X64, btp-ci, fedora44]
     timeout-minutes: 60
     defaults:
       run:
