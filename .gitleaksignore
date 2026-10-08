@@ -1,0 +1,11 @@
+# Gitleaks allowlist: reviewed false positives only
+# Format: <commit>:<path>:<rule-id>:<line>
+
+# Deterministic MD5 configuration/checksum (not a credential)
+8bb0abfa1e5dd13ff99180f091fd9544dd4b3dfd:pos-app/test/stress_config_cas_conflict_test.dart:generic-api-key:21
+0d5d033658aae1828d3982bb0e1acd027ee64f8c:pos-app/lib/core/config/five_layer_resolver.dart:generic-api-key:8
+7d84e25d9a0bfeb52a2cdbb2535ad9556f712595:pos-app/lib/core/config/five_layer_resolver.dart:generic-api-key:8
+
+# Supabase publishable key is intentionally public/client-side by design
+31f7e6cd6ff16089189efe57cb3966b5cbc48568:btp-admin/auth.js:generic-api-key:4
+e448a95b297b14e52dca1049ddb53371c5752d2e:pos-app/tool/staging.public.json:generic-api-key:3
