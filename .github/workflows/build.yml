@@ -2,6 +2,9 @@ name: 02 · UAT Infinix Release APK
 
 on: [push, pull_request]
 
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: ubuntu-latest
