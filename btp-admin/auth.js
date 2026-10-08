@@ -1,5 +1,5 @@
 (function(){
-  const ALLOWED_EMAIL='satria@berkahtigaputeri.com';
+  const ALLOWED_EMAIL='berkahtigaputeri@gmail.com';
   const DEFAULT_URL='https://cztlmwzfrhyafgawphgw.supabase.co';
   const DEFAULT_KEY='sb_publishable_LlsIisir66_TWiRRQ43l6A_yqoUDH13';
   const URL_KEY='btp:connUrl', ANON_KEY='btp:connKey';
@@ -26,6 +26,18 @@
     if((data.user?.email||'').toLowerCase()!==ALLOWED_EMAIL){await c.auth.signOut();throw new Error('Akun ini bukan super admin yang diizinkan.');}
     return data.user;
   }
+  async function requestPasswordReset(email,redirectTo){
+    const normalized=(email||'').trim().toLowerCase();
+    if(normalized!==ALLOWED_EMAIL)throw new Error('Email bukan akun Super Admin yang diizinkan.');
+    const {error}=await client().auth.resetPasswordForEmail(ALLOWED_EMAIL,{redirectTo});
+    if(error)throw error;
+    return true;
+  }
+  async function updatePassword(password){
+    const {data,error}=await client().auth.updateUser({password});
+    if(error)throw error;
+    return data.user;
+  }
   async function logout(){try{await client().auth.signOut();}finally{location.replace('login.html');}}
-  window.BTP_AUTH={ALLOWED_EMAIL,DEFAULT_URL,DEFAULT_KEY,cfg,saveConfig,client,getAdmin,requireAdmin,login,logout};
+  window.BTP_AUTH={ALLOWED_EMAIL,DEFAULT_URL,DEFAULT_KEY,cfg,saveConfig,client,getAdmin,requireAdmin,login,requestPasswordReset,updatePassword,logout};
 })();
