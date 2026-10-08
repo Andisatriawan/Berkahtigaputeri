@@ -32,12 +32,10 @@ jobs:
             ghcr.io/gitleaks/gitleaks:v8.30.1 \
             detect --source . --log-opts="--all" --redact -v
 
-      - name: Verify Fedora host dependencies
+      - name: Verify Fedora native dependencies
         shell: bash
         run: |
           set -euo pipefail
-          java -version
-          javac -version
           sqlite3 --version
           test -f /usr/include/sqlite3.h
           podman --version
@@ -61,6 +59,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          java -version
+          javac -version
           flutter --version
           sdkmanager --version
           flutter doctor -v
