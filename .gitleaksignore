@@ -9,3 +9,10 @@
 # Supabase publishable key is intentionally public/client-side by design
 31f7e6cd6ff16089189efe57cb3966b5cbc48568:btp-admin/auth.js:generic-api-key:4
 e448a95b297b14e52dca1049ddb53371c5752d2e:pos-app/tool/staging.public.json:generic-api-key:3
+
+# Historical deterministic MD5 keyset checksums in audit evidence; reviewed and not credentials
+8701ec59f1dac8d3a493e3c9018fe69f25cc7ca3:docs/audit/provenance.txt:generic-api-key:6
+d8cd93f3a307fdde730d265c739d664ffd7c8574:docs/permanent/DOC_02_SUPABASE_SCHEMA_V1.sql:generic-api-key:29
+d8cd93f3a307fdde730d265c739d664ffd7c8574:docs/permanent/DOC_08_RPC_EFFECTIVE_CONFIG.sql:generic-api-key:90
+d8cd93f3a307fdde730d265c739d664ffd7c8574:docs/permanent/DOC_11_P0_SECURITY_VERIFICATION_20261008.md:generic-api-key:32
+0916ed8a3eeb8648adde77ab9d7d58ae76248dea:scripts/all-green-loop.sh:generic-api-key:6
