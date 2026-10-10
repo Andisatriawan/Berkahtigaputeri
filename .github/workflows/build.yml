@@ -25,10 +25,11 @@ jobs:
           persist-credentials: false
       - name: Secret scan
         shell: bash
-        working-directory:.
+        working-directory: .
         run: |
           set -euo pipefail
-          podman run --rm -v "$PWD:/repo:Z" -w /repo ghcr.io/gitleaks/gitleaks:v8.30.1 detect --source. --log-opts="--all" --redact -v
+          export XDG_RUNTIME_DIR="/run/user/$(id -u)"
+          podman run --rm -v "$PWD:/repo:Z" -w /repo ghcr.io/gitleaks/gitleaks:v8.30.1 detect --source . --log-opts="--all" --redact -v
       - name: Verify Fedora deps
         shell: bash
         run: |
