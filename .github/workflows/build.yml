@@ -50,6 +50,23 @@ jobs:
         with:
           channel: stable
           cache: true
+      - name: Prepare missing Android scaffold
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! -x android/gradlew || ! -f android/app/src/main/AndroidManifest.xml ]]; then
+            template="${RUNNER_TEMP}/pos-android-template"
+            rm -rf "$template"
+            flutter create --no-pub --platforms=android --org com.berkahtigaputeri --project-name pos "$template"
+            mkdir -p android
+            cp -an "$template/android/." android/
+            if [[ ! -f .metadata ]]; then
+              cp "$template/.metadata" .metadata
+            fi
+          fi
+          test -x android/gradlew
+          test -f android/app/src/main/AndroidManifest.xml
+          test -f .metadata
       - name: Install dependencies
         run: flutter pub get
       - name: Analyze
