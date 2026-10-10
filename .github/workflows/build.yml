@@ -64,9 +64,38 @@ jobs:
               cp "$template/.metadata" .metadata
             fi
           fi
+
+          # Use the Java 17 JDK selected by actions/setup-java and cap Gradle
+          # memory so the self-hosted laptop runner does not overcommit RAM.
+          gradle_props="android/gradle.properties"
+          touch "$gradle_props"
+          if grep -q '^org.gradle.jvmargs=' "$gradle_props"; then
+            sed -i -E 's/-Xmx[0-9]+[kKmMgG]+/-Xmx2G/; s/-XX:MaxMetaspaceSize=[0-9]+[kKmMgG]+/-XX:MaxMetaspaceSize=1G/' "$gradle_props"
+          else
+            printf '%s\n' 'org.gradle.jvmargs=-Xmx2G -XX:MaxMetaspaceSize=1G -Dfile.encoding=UTF-8' >> "$gradle_props"
+          fi
+          if grep -q '^org.gradle.java.home=' "$gradle_props"; then
+            sed -i "s|^org.gradle.java.home=.*|org.gradle.java.home=$JAVA_HOME|" "$gradle_props"
+          else
+            printf 'org.gradle.java.home=%s\n' "$JAVA_HOME" >> "$gradle_props"
+          fi
+          if grep -q '^org.gradle.workers.max=' "$gradle_props"; then
+            sed -i 's/^org.gradle.workers.max=.*/org.gradle.workers.max=2/' "$gradle_props"
+          else
+            printf '%s\n' 'org.gradle.workers.max=2' >> "$gradle_props"
+          fi
+          if grep -q '^org.gradle.parallel=' "$gradle_props"; then
+            sed -i 's/^org.gradle.parallel=.*/org.gradle.parallel=false/' "$gradle_props"
+          else
+            printf '%s\n' 'org.gradle.parallel=false' >> "$gradle_props"
+          fi
+
           test -x android/gradlew
           test -f android/app/src/main/AndroidManifest.xml
+          test -f android/gradle.properties
           test -f .metadata
+          grep -F "org.gradle.java.home=$JAVA_HOME" android/gradle.properties
+          grep -E -- '-Xmx2G' android/gradle.properties
       - name: Install dependencies
         run: flutter pub get
       - name: Analyze
