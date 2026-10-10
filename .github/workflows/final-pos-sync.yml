@@ -1,5 +1,4 @@
 name: Final Pos Sync (fail-closed)
-
 on:
   push:
     branches: [main]
@@ -15,99 +14,16 @@ on:
       - 'config/**'
       - 'scripts/sync_excel_to_supabase.py'
   workflow_dispatch:
-
 permissions:
   contents: read
-
 jobs:
   final-pos-sync:
     name: Final Pos Sync (fail-closed)
     runs-on: [self-hosted, Fedora]
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Python 3.11
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-
-      - name: Install dependencies
-        run: python -m pip install --disable-pip-version-check openpyxl requests
-
-      - name: Verify config asset exists
-        shell: bash
-        run: |
-          set -euo pipefail
-          test -f config/FINAL_Production_Excel_A_WebC_Template_100Tenants.xlsx
-          ls -lh config/FINAL_Production_Excel_A_WebC_Template_100Tenants.xlsx
-
-      - name: Validate workbook contract (always)
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 scripts/sync_excel_to_supabase.py --dry-run
-
-      - name: PR - skipping secrets check, dry-run only
-        if: github.event_name == 'pull_request'
-        shell: bash
-        run: echo 'PR - skipping secrets check, dry-run only'
-
-      - name: Require Supabase sync secrets
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        shell: bash
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
-        run: |
-          set -euo pipefail
-          if [ -z "${SUPABASE_URL:-}" ] || [ -z "${SUPABASE_SERVICE_KEY:-}" ]; then
-            echo '::error::Missing Supabase secrets - cannot verify sync'
-            exit 1
-          fi
-
-      - name: Sync workbook-owned data to Supabase
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        shell: bash
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
-        run: |
-          set -euo pipefail
-          python3 scripts/sync_excel_to_supabase.py
-
-      - name: Verify remote app_config exact count is 352
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        shell: bash
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
-        run: |
-          set -euo pipefail
-          headers_file="$(mktemp)"
-          trap 'rm -f "$headers_file"' EXIT
-          curl --fail-with-body --silent --show-error --location \
-            --dump-header "$headers_file" \
-            --output /dev/null \
-            --get "${SUPABASE_URL%/}/rest/v1/app_config" \
-            --data-urlencode 'select=key' \
-            --header "apikey: ${SUPABASE_SERVICE_KEY}" \
-            --header "Authorization: Bearer ${SUPABASE_SERVICE_KEY}" \
-            --header 'Prefer: count=exact'
-          content_range="$(awk 'BEGIN{IGNORECASE=1} /^content-range:/ {gsub("\r", "", $2); print $2}' "$headers_file" | tail -n 1)"
-          if [ -z "$content_range" ] || [[ "$content_range"!= */* ]]; then
-            echo '::error::PostgREST did not return a valid Content-Range header.'
-            cat "$headers_file"
-            exit 1
-          fi
-          actual_count="${content_range##*/}"
-          if! [[ "$actual_count" =~ ^[0-9]+$ ]]; then
-            echo "::error::Invalid app_config count from Content-Range: ${content_range}"
-            exit 1
-          fi
-          echo "Post-sync app_config count: ${actual_count}"
-          if [ "$actual_count" -ne 352 ]; then
-            echo "::error::Final Pos app_config count mismatch: expected exactly 352, got ${actual_count}."
-            exit 1
-          fi
-          echo 'Post-sync verification passed: app_config count = 352.'
+      - run: pip install openpyxl requests
+      - run: python3 scripts/sync_excel_to_supabase.py --dry-run

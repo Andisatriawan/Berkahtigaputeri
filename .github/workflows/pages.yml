@@ -20,8 +20,7 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: [self-hosted, Fedora]
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
       - name: Prepare stable Pages layout
         run: |
           set -euxo pipefail
@@ -29,20 +28,7 @@ jobs:
           rm -rf _site
           mkdir -p _site
           cp -R btp-admin _site/btp-admin
-          cat > _site/index.html <<'INNEREOF'
-          <!doctype html>
-          <html lang="id">
-          <head>
-            <meta charset="utf-8">
-            <meta name="viewport" content="width=device-width,initial-scale=1">
-            <meta http-equiv="refresh" content="0; url=btp-admin/">
-            <link rel="canonical" href="btp-admin/">
-            <title>Berkah POS Admin</title>
-          </head>
-          <body><a href="btp-admin/">Buka Berkah POS Admin</a></body>
-          </html>
-          INNEREOF
-          find _site -maxdepth 2 -type f -print | sort
+          echo '<!doctype html><meta http-equiv="refresh" content="0; url=btp-admin/">' > _site/index.html
       - name: Setup Pages
         uses: actions/configure-pages@v4
       - name: Upload artifact
