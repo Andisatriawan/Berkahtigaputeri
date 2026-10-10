@@ -1,6 +1,15 @@
 name: 02 · UAT Infinix Release APK
 
-on: [push, pull_request]
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'pos-app/**'
+      - '.github/workflows/build.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'pos-app/**'
 
 permissions:
   contents: read
@@ -22,7 +31,7 @@ jobs:
 
       - name: Secret scan (Gitleaks full history)
         shell: bash
-        working-directory: .
+        working-directory:.
         run: |
           set -euo pipefail
           export XDG_RUNTIME_DIR="/run/user/$(id -u)"
@@ -30,7 +39,7 @@ jobs:
             -v "$PWD:/repo:Z" \
             -w /repo \
             ghcr.io/gitleaks/gitleaks:v8.30.1 \
-            detect --source . --log-opts="--all" --redact -v
+            detect --source. --log-opts="--all" --redact -v
 
       - name: Verify Fedora native dependencies
         shell: bash
@@ -47,7 +56,7 @@ jobs:
           java-version: '17'
 
       - name: Setup Android SDK
-        uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4.0.4
+        uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
@@ -74,17 +83,14 @@ jobs:
             CUSTOM_GRADLE="$RUNNER_TEMP/app-build.gradle"
             cp android/app/build.gradle "$CUSTOM_GRADLE"
           fi
-
           rm -rf "$RUNNER_TEMP/berkahtigaputeri_android"
           flutter create \
             --platforms=android \
             --org com.berkahtigaputeri \
             --project-name pos \
             "$RUNNER_TEMP/berkahtigaputeri_android"
-
           rm -rf android
           cp -R "$RUNNER_TEMP/berkahtigaputeri_android/android" android
-
           if [ -n "$CUSTOM_GRADLE" ]; then
             rm -f android/app/build.gradle.kts
             cp "$CUSTOM_GRADLE" android/app/build.gradle

@@ -3,8 +3,17 @@ name: Final Pos Sync (fail-closed)
 on:
   push:
     branches: [main]
+    paths:
+      - 'supabase/**'
+      - 'config/**'
+      - 'scripts/sync_excel_to_supabase.py'
+      - '.github/workflows/final-pos-sync.yml'
   pull_request:
     branches: [main]
+    paths:
+      - 'supabase/**'
+      - 'config/**'
+      - 'scripts/sync_excel_to_supabase.py'
   workflow_dispatch:
 
 permissions:
@@ -75,10 +84,8 @@ jobs:
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
         run: |
           set -euo pipefail
-
           headers_file="$(mktemp)"
           trap 'rm -f "$headers_file"' EXIT
-
           curl --fail-with-body --silent --show-error --location \
             --dump-header "$headers_file" \
             --output /dev/null \
@@ -87,24 +94,20 @@ jobs:
             --header "apikey: ${SUPABASE_SERVICE_KEY}" \
             --header "Authorization: Bearer ${SUPABASE_SERVICE_KEY}" \
             --header 'Prefer: count=exact'
-
           content_range="$(awk 'BEGIN{IGNORECASE=1} /^content-range:/ {gsub("\r", "", $2); print $2}' "$headers_file" | tail -n 1)"
-          if [ -z "$content_range" ] || [[ "$content_range" != */* ]]; then
+          if [ -z "$content_range" ] || [[ "$content_range"!= */* ]]; then
             echo '::error::PostgREST did not return a valid Content-Range header.'
             cat "$headers_file"
             exit 1
           fi
-
           actual_count="${content_range##*/}"
-          if ! [[ "$actual_count" =~ ^[0-9]+$ ]]; then
+          if! [[ "$actual_count" =~ ^[0-9]+$ ]]; then
             echo "::error::Invalid app_config count from Content-Range: ${content_range}"
             exit 1
           fi
-
           echo "Post-sync app_config count: ${actual_count}"
           if [ "$actual_count" -ne 352 ]; then
             echo "::error::Final Pos app_config count mismatch: expected exactly 352, got ${actual_count}."
             exit 1
           fi
-
           echo 'Post-sync verification passed: app_config count = 352.'
