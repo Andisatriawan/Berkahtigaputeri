@@ -22,8 +22,12 @@ jobs:
     runs-on: [self-hosted, Fedora]
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
-        with:
-          python-version: '3.11'
-      - run: pip install openpyxl requests
-      - run: python3 scripts/sync_excel_to_supabase.py --dry-run
+      - name: Install dependencies and dry-run sync
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 --version
+          python3 -m venv "${RUNNER_TEMP}/pos-sync-venv"
+          "${RUNNER_TEMP}/pos-sync-venv/bin/python" -m pip install --upgrade pip
+          "${RUNNER_TEMP}/pos-sync-venv/bin/python" -m pip install openpyxl requests
+          "${RUNNER_TEMP}/pos-sync-venv/bin/python" scripts/sync_excel_to_supabase.py --dry-run
