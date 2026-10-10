@@ -20,3 +20,7 @@ The artifact is published as `berkahtigaputeri-pos-release-aab`. Because this re
 
 The CI scaffold step constrains Gradle to the Java 17 JDK selected by `actions/setup-java`, caps the heap at 2 GiB, and limits parallel workers to reduce memory pressure on the self-hosted Fedora runner.
 # auto-start test 1791672616
+
+## Workflow trigger scope
+
+Pushes that modify only `pos-app/**` are routed to this workflow. The Pages workflow is scoped to `btp-admin/**`, while Final Pos Sync is scoped to `supabase/**`, `config/**`, and `scripts/sync_excel_to_supabase.py`. Changes to each workflow definition intentionally trigger its owning workflow.
