@@ -1,0 +1,47 @@
+name: Berkah POS Flutter CI
+
+on:
+  pull_request:
+    paths:
+      - "berkah-pos-trial/**"
+      - ".github/workflows/berkah-pos-trial-ci.yml"
+  push:
+    branches: ["main"]
+    paths:
+      - "berkah-pos-trial/**"
+      - ".github/workflows/berkah-pos-trial-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: berkah-pos-trial
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Prepare standard Gradle wrapper files
+        shell: bash
+        run: |
+          flutter create --platforms=android --project-name berkah_pos --org id.co.berkahtigaputeri --overwrite /tmp/berkah-wrapper-seed
+          cp /tmp/berkah-wrapper-seed/android/gradlew android/gradlew
+          cp /tmp/berkah-wrapper-seed/android/gradlew.bat android/gradlew.bat
+          cp /tmp/berkah-wrapper-seed/android/gradle/wrapper/gradle-wrapper.jar android/gradle/wrapper/gradle-wrapper.jar
+          chmod +x android/gradlew
+      - name: Validate requested Android configuration
+        run: python3 tool/verify_project.py
+      - name: Resolve dependencies
+        run: flutter pub get
+      - name: Analyze Dart
+        run: flutter analyze
+      - name: Run widget tests
+        run: flutter test
+      - name: Build debug APK
+        run: flutter build apk --debug
