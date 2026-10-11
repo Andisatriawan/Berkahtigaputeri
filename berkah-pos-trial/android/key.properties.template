@@ -1,0 +1,6 @@
+# Copy to android/key.properties and replace each value locally.
+# Never commit the real key.properties or keystore.
+storePassword=REPLACE_WITH_KEYSTORE_PASSWORD
+keyPassword=REPLACE_WITH_KEY_PASSWORD
+keyAlias=berkahpos
+storeFile=app/berkah-pos-release.jks
