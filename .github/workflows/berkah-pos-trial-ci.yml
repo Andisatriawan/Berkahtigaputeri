@@ -1,0 +1,41 @@
+name: Berkah POS Flutter CI
+
+on:
+  pull_request:
+    paths:
+      - "berkah-pos-trial/**"
+      - ".github/workflows/berkah-pos-trial-ci.yml"
+  push:
+    branches: ["**"]
+    paths:
+      - "berkah-pos-trial/**"
+      - ".github/workflows/berkah-pos-trial-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: berkah-pos-trial
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Prepare Gradle wrapper files
+        run: bash tool/prepare_gradle_wrapper.sh
+      - name: Validate requested Android configuration
+        run: python3 tool/verify_project.py
+      - name: Resolve dependencies
+        run: flutter pub get
+      - name: Analyze Dart
+        run: flutter analyze
+      - name: Run widget tests
+        run: flutter test
+      - name: Build debug APK
+        run: flutter build apk --debug

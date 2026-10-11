@@ -1,0 +1,53 @@
+import java.util.Properties
+
+plugins {
+    id "com.android.application"
+    id "org.jetbrains.kotlin.android"
+    id "dev.flutter.flutter-gradle-plugin"
+}
+
+def keystoreProperties = new Properties()
+def keystorePropertiesFile = rootProject.file("key.properties")
+if (keystorePropertiesFile.exists()) keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+def hasReleaseSigning = keystorePropertiesFile.exists() && keystoreProperties.getProperty("storeFile") && keystoreProperties.getProperty("storePassword") && keystoreProperties.getProperty("keyAlias") && keystoreProperties.getProperty("keyPassword")
+
+android {
+    namespace = "id.co.berkahtigaputeri.berkahpos"
+    compileSdk = 35
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+    kotlinOptions { jvmTarget = JavaVersion.VERSION_17.toString() }
+    defaultConfig {
+        applicationId = "id.co.berkahtigaputeri.berkahpos"
+        minSdk = 24
+        targetSdk = 35
+        versionCode = 1
+        versionName = "1.0.0"
+    }
+    signingConfigs {
+        release {
+            if (hasReleaseSigning) {
+                storeFile = rootProject.file(keystoreProperties.getProperty("storeFile"))
+                storePassword = keystoreProperties.getProperty("storePassword")
+                keyAlias = keystoreProperties.getProperty("keyAlias")
+                keyPassword = keystoreProperties.getProperty("keyPassword")
+            }
+        }
+    }
+    buildTypes {
+        release {
+            signingConfig = hasReleaseSigning ? signingConfigs.release : signingConfigs.debug
+            minifyEnabled = false
+            shrinkResources = false
+        }
+    }
+}
+flutter { source = "../.." }
+
+tasks.configureEach {
+    if (name == "bundleRelease" && !hasReleaseSigning) {
+        doFirst { throw new GradleException("Release signing missing. Copy android/key.properties.template to android/key.properties and configure your private keystore.") }
+    }
+}
