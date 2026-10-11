@@ -6,7 +6,7 @@ on:
       - "berkah-pos-trial/**"
       - ".github/workflows/berkah-pos-trial-ci.yml"
   push:
-    branches: ["main"]
+    branches: ["**"]
     paths:
       - "berkah-pos-trial/**"
       - ".github/workflows/berkah-pos-trial-ci.yml"
