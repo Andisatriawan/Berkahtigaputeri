@@ -52,6 +52,10 @@ class ConfigService {
 
   ConfigService(this._client, this._preferences);
 
+  /// True only when Supabase has an authenticated user session.
+  /// A publishable key plus tenant/device strings is not authentication.
+  bool get hasAuthenticatedSession => _client.auth.currentSession != null;
+
   Future<EffectiveConfigResult> getEffectiveConfig({
     required String tenantId,
     required String deviceId,
