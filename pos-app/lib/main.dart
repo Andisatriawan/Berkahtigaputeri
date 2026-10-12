@@ -4,37 +4,46 @@ import 'package:supabase/supabase.dart';
 
 import 'core/config/app_identity_store.dart';
 import 'core/config/config_service.dart';
+import 'core/database/pos_database.dart';
 import 'features/home/home_screen.dart';
 
-const String _supabaseUrl = String.fromEnvironment(
-  'SUPABASE_URL',
-  defaultValue: 'https://cztlmwzfrhyafgawphgw.supabase.co',
-);
-const String _supabasePublishableKey = String.fromEnvironment(
-  'SUPABASE_PUBLISHABLE_KEY',
-  defaultValue: 'sb_publishable_LlsIisir66_TWiRRQ43l6A_yqoUDH13',
-);
+const String _supabaseUrl = String.fromEnvironment('SUPABASE_URL');
+const String _supabasePublishableKey =
+    String.fromEnvironment('SUPABASE_PUBLISHABLE_KEY');
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   final preferences = await SharedPreferences.getInstance();
-  final client = SupabaseClient(_supabaseUrl, _supabasePublishableKey);
+  final database = await PosDatabase.openDefault();
+  final identityStore = AppIdentityStore(preferences);
+
+  // Do not silently point a release build at a staging database. Cloud config
+  // is opt-in at build time and remains unavailable until an authorized
+  // Supabase session/device enrollment has been integrated.
+  ConfigService? configService;
+  if (_supabaseUrl.isNotEmpty && _supabasePublishableKey.isNotEmpty) {
+    final client = SupabaseClient(_supabaseUrl, _supabasePublishableKey);
+    configService = ConfigService(client, preferences);
+  }
 
   runApp(
     BerkahTigaPuteriApp(
-      configService: ConfigService(client, preferences),
-      identityStore: AppIdentityStore(preferences),
+      database: database,
+      configService: configService,
+      identityStore: identityStore,
     ),
   );
 }
 
 class BerkahTigaPuteriApp extends StatelessWidget {
+  final PosDatabase? database;
   final ConfigService? configService;
   final AppIdentityStore? identityStore;
 
   const BerkahTigaPuteriApp({
     super.key,
+    this.database,
     this.configService,
     this.identityStore,
   });
@@ -48,14 +57,15 @@ class BerkahTigaPuteriApp extends StatelessWidget {
         colorSchemeSeed: Colors.green,
         useMaterial3: true,
       ),
-      home: configService == null || identityStore == null
+      home: database == null || identityStore == null
           ? const Scaffold(
               body: Center(
                 child: Text('Berkah Tiga Puteri POS'),
               ),
             )
           : HomeScreen(
-              configService: configService!,
+              database: database!,
+              configService: configService,
               identityStore: identityStore!,
             ),
     );
