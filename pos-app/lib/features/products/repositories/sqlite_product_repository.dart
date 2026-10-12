@@ -479,3 +479,11 @@ class InventoryLotNotFoundException extends ProductRepositoryException {
   InventoryLotNotFoundException(String lotId)
       : super('Lot "$lotId" tidak ditemukan.');
 }
+
+class ProductRequiresReviewException extends ProductRepositoryException {
+  ProductRequiresReviewException(String productName)
+      : super(
+          'Produk "$productName" belum dapat dijual sebelum klasifikasi PPN '
+          'dan data migrasi ditinjau.',
+        );
+}
