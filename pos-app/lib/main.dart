@@ -133,11 +133,15 @@ class _AppGateState extends State<_AppGate> {
   Future<void> _signOut() async {
     try {
       await widget.authClient?.auth.signOut();
-    } catch (_) {
-      // Do not continue to use the cloud client after a requested sign-out.
-    }
-    if (mounted) {
+      if (!mounted) return;
+      // Successful local sign-out removes the session; the gate returns to
+      // LoginScreen on the next build.
       setState(() => _localOnly = false);
+    } catch (_) {
+      if (!mounted) return;
+      // Fail closed: even if remote sign-out fails, do not leave this route
+      // using the cloud configuration client until the session is resolved.
+      setState(() => _localOnly = true);
     }
   }
 
