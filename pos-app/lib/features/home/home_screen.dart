@@ -72,6 +72,7 @@ class _HomeScreenState extends State<HomeScreen> {
         onOpenReports: () => setState(() => _selectedIndex = 4),
       ),
       ProductScreen(
+        key: ValueKey<String>('products-$_refreshCounter'),
         repository: _products,
         onChanged: _refreshLocalViews,
       ),
@@ -81,6 +82,7 @@ class _HomeScreenState extends State<HomeScreen> {
         onSaleSaved: _refreshLocalViews,
       ),
       InventoryScreen(
+        key: ValueKey<String>('inventory-$_refreshCounter'),
         repository: _products,
         onChanged: _refreshLocalViews,
       ),
