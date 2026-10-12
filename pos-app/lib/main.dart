@@ -57,7 +57,7 @@ Future<void> main() async {
   );
 }
 
-class BerkahTigaPuteriApp extends StatefulWidget {
+class BerkahTigaPuteriApp extends StatelessWidget {
   const BerkahTigaPuteriApp({
     super.key,
     this.database,
@@ -74,10 +74,52 @@ class BerkahTigaPuteriApp extends StatefulWidget {
   final String? cloudConfigurationMessage;
 
   @override
-  State<BerkahTigaPuteriApp> createState() => _BerkahTigaPuteriAppState();
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'Berkah Tiga Puteri POS',
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData(
+        colorSchemeSeed: const Color(0xFF137A4B),
+        useMaterial3: true,
+      ),
+      home: database == null || identityStore == null
+          ? const Scaffold(
+              body: Center(child: Text('Berkah Tiga Puteri POS')),
+            )
+          : _AppGate(
+              database: database!,
+              authClient: authClient,
+              configService: configService,
+              identityStore: identityStore!,
+              cloudConfigurationMessage: cloudConfigurationMessage,
+            ),
+    );
+  }
 }
 
-class _BerkahTigaPuteriAppState extends State<BerkahTigaPuteriApp> {
+/// Keeps the auth/local-mode switch inside one stable route. Login/logout
+/// therefore replaces the app's current screen without leaving Settings on top
+/// of an obsolete authenticated route.
+class _AppGate extends StatefulWidget {
+  const _AppGate({
+    required this.database,
+    required this.authClient,
+    required this.configService,
+    required this.identityStore,
+    required this.cloudConfigurationMessage,
+  });
+
+  final PosDatabase database;
+  final SupabaseClient? authClient;
+  final ConfigService? configService;
+  final AppIdentityStore identityStore;
+  final String? cloudConfigurationMessage;
+
+  @override
+  State<_AppGate> createState() => _AppGateState();
+}
+
+class _AppGateState extends State<_AppGate> {
   bool _localOnly = false;
 
   void _continueLocalOnly() {
@@ -92,19 +134,17 @@ class _BerkahTigaPuteriAppState extends State<BerkahTigaPuteriApp> {
     try {
       await widget.authClient?.auth.signOut();
     } catch (_) {
-      // Cloud authorization is not reused after the user requested sign-out.
+      // Do not continue to use the cloud client after a requested sign-out.
     }
     if (mounted) {
       setState(() => _localOnly = false);
     }
   }
 
-  Widget _home({
-    required bool localOnly,
-  }) {
+  Widget _home({required bool localOnly}) {
     return HomeScreen(
-      database: widget.database!,
-      identityStore: widget.identityStore!,
+      database: widget.database,
+      identityStore: widget.identityStore,
       configService: localOnly ? null : widget.configService,
       onSignOut: !localOnly && widget.authClient != null ? _signOut : null,
     );
@@ -112,36 +152,27 @@ class _BerkahTigaPuteriAppState extends State<BerkahTigaPuteriApp> {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Berkah Tiga Puteri POS',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorSchemeSeed: const Color(0xFF137A4B),
-        useMaterial3: true,
-      ),
-      home: widget.database == null || widget.identityStore == null
-          ? const Scaffold(
-              body: Center(child: Text('Berkah Tiga Puteri POS')),
-            )
-          : _localOnly
-              ? _home(localOnly: true)
-              : widget.authClient == null
-                  ? LoginScreen(
-                      client: null,
-                      configurationMessage:
-                          widget.cloudConfigurationMessage,
-                      onAuthenticated: _authenticated,
-                      onContinueLocal: _continueLocalOnly,
-                    )
-                  : widget.authClient!.auth.currentSession != null
-                      ? _home(localOnly: false)
-                      : LoginScreen(
-                          client: widget.authClient,
-                          configurationMessage:
-                              widget.cloudConfigurationMessage,
-                          onAuthenticated: _authenticated,
-                          onContinueLocal: _continueLocalOnly,
-                        ),
+    if (_localOnly) return _home(localOnly: true);
+
+    final client = widget.authClient;
+    if (client == null) {
+      return LoginScreen(
+        client: null,
+        configurationMessage: widget.cloudConfigurationMessage,
+        onAuthenticated: _authenticated,
+        onContinueLocal: _continueLocalOnly,
+      );
+    }
+
+    if (client.auth.currentSession != null) {
+      return _home(localOnly: false);
+    }
+
+    return LoginScreen(
+      client: client,
+      configurationMessage: widget.cloudConfigurationMessage,
+      onAuthenticated: _authenticated,
+      onContinueLocal: _continueLocalOnly,
     );
   }
 }
