@@ -568,8 +568,8 @@ class _ConfigurationScreenState extends State<_ConfigurationScreen> {
                   leading: const Icon(Icons.person_remove_outlined),
                   title: const Text('Permintaan Hapus Akun'),
                   subtitle: const Text(
-                    'Ajukan permintaan melalui halaman resmi; verifikasi '
-                    'pemilik akun dilakukan oleh layanan tersebut.',
+                    'Buka halaman resmi dan ikuti proses yang disediakan. '
+                    'Permintaan ini tidak menghapus akun dari aplikasi secara langsung.',
                   ),
                   trailing: const Icon(Icons.open_in_new),
                   onTap: () => _openExternal(_deleteAccountUrl),
