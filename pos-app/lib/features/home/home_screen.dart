@@ -82,7 +82,7 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       InventoryScreen(
         repository: _products,
-        onChanged: () => setState(() {}),
+        onChanged: _refreshLocalViews,
       ),
       ReportsScreen(
         key: ValueKey<String>('reports-$_refreshCounter'),
