@@ -2,77 +2,192 @@ import 'package:flutter/material.dart';
 
 import '../../core/config/app_identity_store.dart';
 import '../../core/config/config_service.dart';
+import '../../core/database/pos_database.dart';
+import '../inventory/inventory_screen.dart';
+import '../pos/checkout/payment_service.dart';
+import '../pos/checkout/sqlite_sale_repository.dart';
+import '../pos/checkout_screen.dart';
+import '../products/product_screen.dart';
+import '../products/repositories/sqlite_product_repository.dart';
+import 'reports_screen.dart';
 
+/// Canonical combined app shell. The trial app's everyday POS flows use the
+/// stronger local inventory/accounting services from pos-app.
 class HomeScreen extends StatefulWidget {
-  final ConfigService configService;
-  final AppIdentityStore identityStore;
-
   const HomeScreen({
     super.key,
-    required this.configService,
+    required this.database,
     required this.identityStore,
+    this.configService,
   });
+
+  final PosDatabase database;
+  final AppIdentityStore identityStore;
+  final ConfigService? configService;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  static const List<String> _uatTenants = <String>[
-    'berkah_sumber',
-    'clientA',
-    'clientB',
+  late final SqliteProductRepository _products;
+  late final PaymentService _payments;
+  int _selectedIndex = 0;
+
+  static const _titles = <String>[
+    'Beranda', 'Produk', 'Kasir', 'Stok', 'Laporan',
   ];
 
-  late String _tenantId;
-  late final TextEditingController _deviceController;
+  @override
+  void initState() {
+    super.initState();
+    _products = SqliteProductRepository(widget.database);
+    _payments = PaymentService(
+      repository: SqliteSaleRepository(widget.database),
+    );
+  }
 
-  TenantFeatures? _features;
-  Map<String, dynamic>? _effectivePos;
-  bool _fromCache = false;
+  @override
+  Widget build(BuildContext context) {
+    final pages = <Widget>[
+      _DashboardScreen(
+        database: widget.database,
+        onOpenProducts: () => setState(() => _selectedIndex = 1),
+        onOpenCheckout: () => setState(() => _selectedIndex = 2),
+        onOpenInventory: () => setState(() => _selectedIndex = 3),
+        onOpenReports: () => setState(() => _selectedIndex = 4),
+      ),
+      ProductScreen(
+        repository: _products,
+        onChanged: () => setState(() {}),
+      ),
+      CheckoutScreen(
+        productsRepository: _products,
+        paymentService: _payments,
+        onSaleSaved: () => setState(() {}),
+      ),
+      InventoryScreen(
+        repository: _products,
+        onChanged: () => setState(() {}),
+      ),
+      ReportsScreen(database: widget.database),
+    ];
+
+    return Scaffold(
+      appBar: AppBar(
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            const Text('Berkah Tiga Puteri POS'),
+            Text(
+              _titles[_selectedIndex] + ' · Data lokal',
+              style: Theme.of(context).textTheme.labelSmall,
+            ),
+          ],
+        ),
+        actions: <Widget>[
+          IconButton(
+            tooltip: 'Pengaturan tenant dan cloud',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => _ConfigurationScreen(
+                  configService: widget.configService,
+                  identityStore: widget.identityStore,
+                ),
+              ),
+            ),
+            icon: const Icon(Icons.settings_outlined),
+          ),
+        ],
+      ),
+      body: IndexedStack(index: _selectedIndex, children: pages),
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: _selectedIndex,
+        onDestinationSelected: (index) => setState(() => _selectedIndex = index),
+        destinations: const <NavigationDestination>[
+          NavigationDestination(
+            icon: Icon(Icons.home_outlined),
+            selectedIcon: Icon(Icons.home),
+            label: 'Beranda',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.inventory_2_outlined),
+            selectedIcon: Icon(Icons.inventory_2),
+            label: 'Produk',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.point_of_sale_outlined),
+            selectedIcon: Icon(Icons.point_of_sale),
+            label: 'Kasir',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.warehouse_outlined),
+            selectedIcon: Icon(Icons.warehouse),
+            label: 'Stok',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.assessment_outlined),
+            selectedIcon: Icon(Icons.assessment),
+            label: 'Laporan',
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DashboardScreen extends StatefulWidget {
+  const _DashboardScreen({
+    required this.database,
+    required this.onOpenProducts,
+    required this.onOpenCheckout,
+    required this.onOpenInventory,
+    required this.onOpenReports,
+  });
+
+  final PosDatabase database;
+  final VoidCallback onOpenProducts;
+  final VoidCallback onOpenCheckout;
+  final VoidCallback onOpenInventory;
+  final VoidCallback onOpenReports;
+
+  @override
+  State<_DashboardScreen> createState() => _DashboardScreenState();
+}
+
+class _DashboardScreenState extends State<_DashboardScreen> {
+  Map<String, Object?> _summary = const <String, Object?>{};
+  int _products = 0;
+  int _pending = 0;
   bool _loading = true;
   String? _error;
 
   @override
   void initState() {
     super.initState();
-    _tenantId = widget.identityStore.tenantId;
-    _deviceController = TextEditingController(
-      text: widget.identityStore.deviceId,
-    );
     _reload();
   }
 
-  @override
-  void dispose() {
-    _deviceController.dispose();
-    super.dispose();
-  }
-
   Future<void> _reload() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
-
     try {
-      final deviceId = _deviceController.text.trim().isEmpty
-          ? AppIdentityStore.defaultDeviceId
-          : _deviceController.text.trim();
-
-      final config = await widget.configService.getEffectiveConfig(
-        tenantId: _tenantId,
-        deviceId: deviceId,
-        service: 'pos',
-      );
-      final features = await widget.configService.getFeatures(_tenantId);
-
+      final db = widget.database.database;
+      final summary = (await db.rawQuery(
+        'SELECT COUNT(*) AS sale_count, '
+        'COALESCE(SUM(grand_total), 0) AS revenue FROM sales',
+      )).single;
+      final productCount =
+          (await db.rawQuery('SELECT COUNT(*) AS value FROM products'))
+              .single['value']! as int;
+      final pendingCount = (await db.rawQuery(
+        "SELECT COUNT(*) AS value FROM outbox_events WHERE status <> 'acknowledged'",
+      )).single['value']! as int;
       if (!mounted) return;
       setState(() {
-        _effectivePos = config.value;
-        _features = features.value;
-        _fromCache = config.fromCache || features.fromCache;
+        _summary = summary;
+        _products = productCount;
+        _pending = pendingCount;
         _loading = false;
+        _error = null;
       });
     } catch (error) {
       if (!mounted) return;
@@ -83,249 +198,313 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  Future<void> _selectTenant(String tenantId) async {
-    await widget.identityStore.setTenantId(tenantId);
-    if (!mounted) return;
-    setState(() => _tenantId = tenantId);
-    await _reload();
-  }
+  int _number(String key) => (_summary[key] as num?)?.toInt() ?? 0;
 
-  Future<void> _saveDeviceAndReload() async {
-    final deviceId = _deviceController.text.trim().isEmpty
-        ? AppIdentityStore.defaultDeviceId
-        : _deviceController.text.trim();
-    _deviceController.text = deviceId;
-    await widget.identityStore.setDeviceId(deviceId);
-    await _reload();
-  }
-
-  String get _mdrText {
-    final config = _effectivePos;
-    if (config == null) return '-';
-    final value = config['mdr'] ?? config['qris_mdr'];
-    if (value == null) return '-';
-    return '$value%';
+  String _money(int amount) {
+    final digits = amount.toString();
+    final output = StringBuffer();
+    for (var index = 0; index < digits.length; index++) {
+      if (index > 0 && (digits.length - index) % 3 == 0) output.write('.');
+      output.write(digits[index]);
+    }
+    return 'Rp ' + output.toString();
   }
 
   @override
   Widget build(BuildContext context) {
-    final features = _features;
-    final tenants = _uatTenants.contains(_tenantId)
-        ? _uatTenants
-        : <String>[_tenantId, ..._uatTenants];
-
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Berkah Tiga Puteri POS'),
-        actions: <Widget>[
-          IconButton(
-            tooltip: 'Refresh config',
-            onPressed: _loading ? null : _reload,
-            icon: const Icon(Icons.refresh),
-          ),
-        ],
-      ),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
+    if (_loading) return const Center(child: CircularProgressIndicator());
+    if (_error != null) {
+      return ListView(
+        padding: const EdgeInsets.all(24),
         children: <Widget>[
-          _SettingsCard(
-            tenantId: _tenantId,
-            tenants: tenants,
-            deviceController: _deviceController,
-            onTenantChanged: _loading ? null : _selectTenant,
-            onSaveDevice: _loading ? null : _saveDeviceAndReload,
-          ),
-          const SizedBox(height: 12),
-          _StatusCard(
-            loading: _loading,
-            fromCache: _fromCache,
-            error: _error,
-            mdr: _mdrText,
-          ),
-          const SizedBox(height: 12),
-          if (!_loading && _error == null && features != null) ...<Widget>[
-            const Text(
-              'Menu layanan',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 12,
-              runSpacing: 12,
-              children: <Widget>[
-                if (features.pos)
-                  const _ServiceCard(
-                    icon: Icons.point_of_sale,
-                    title: 'POS',
-                    subtitle: 'Kasir dan pembayaran',
-                  ),
-                if (features.akuntansi)
-                  const _ServiceCard(
-                    icon: Icons.account_balance,
-                    title: 'Akuntansi',
-                    subtitle: 'Jurnal dan laporan',
-                  ),
-              ],
-            ),
-            if (!features.pos && !features.akuntansi)
-              const Padding(
-                padding: EdgeInsets.only(top: 12),
-                child: Text('Tidak ada layanan aktif untuk tenant ini.'),
-              ),
-          ],
+          Text('Dashboard gagal dimuat: ' + _error!),
+          TextButton(onPressed: _reload, child: const Text('Coba lagi')),
         ],
-      ),
-    );
-  }
-}
-
-class _SettingsCard extends StatelessWidget {
-  final String tenantId;
-  final List<String> tenants;
-  final TextEditingController deviceController;
-  final ValueChanged<String>? onTenantChanged;
-  final VoidCallback? onSaveDevice;
-
-  const _SettingsCard({
-    required this.tenantId,
-    required this.tenants,
-    required this.deviceController,
-    required this.onTenantChanged,
-    required this.onSaveDevice,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            const Text(
-              'Settings / Tenant UAT',
-              style: TextStyle(fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 12),
-            DropdownButtonFormField<String>(
-              initialValue: tenantId,
-              decoration: const InputDecoration(
-                labelText: 'tenant_id',
-                border: OutlineInputBorder(),
-              ),
-              items: tenants
-                  .map(
-                    (tenant) => DropdownMenuItem<String>(
-                      value: tenant,
-                      child: Text(tenant),
-                    ),
-                  )
-                  .toList(),
-              onChanged: onTenantChanged == null
-                  ? null
-                  : (value) {
-                      if (value != null) onTenantChanged!(value);
-                    },
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: deviceController,
-              decoration: const InputDecoration(
-                labelText: 'device_id',
-                helperText: 'Default UAT: infinix_xos_123',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 8),
-            FilledButton.icon(
-              onPressed: onSaveDevice,
-              icon: const Icon(Icons.save),
-              label: const Text('Simpan device & reload'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _StatusCard extends StatelessWidget {
-  final bool loading;
-  final bool fromCache;
-  final String? error;
-  final String mdr;
-
-  const _StatusCard({
-    required this.loading,
-    required this.fromCache,
-    required this.error,
-    required this.mdr,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    String status;
-    if (loading) {
-      status = 'Memuat config 3 layer...';
-    } else if (error != null) {
-      status = 'Config gagal dimuat: $error';
-    } else if (fromCache) {
-      status = 'CACHE OFFLINE';
-    } else {
-      status = 'LIVE SUPABASE';
+      );
     }
 
-    return Card(
-      child: ListTile(
-        leading: loading
-            ? const SizedBox(
-                width: 24,
-                height: 24,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              )
-            : Icon(fromCache ? Icons.offline_bolt : Icons.cloud_done),
-        title: Text(status),
-        subtitle: Text('MDR efektif POS: $mdr'),
+    return RefreshIndicator(
+      onRefresh: _reload,
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
+        children: <Widget>[
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(18),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(
+                    'Selamat datang di Berkah POS',
+                    style: Theme.of(context).textTheme.headlineSmall,
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Kasir local-first. Penjualan dan perubahan stok '
+                    'tersimpan di perangkat ini; cloud sync menunggu layanan '
+                    'terautentikasi yang belum terpasang.',
+                  ),
+                  const SizedBox(height: 14),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: <Widget>[
+                      FilledButton.icon(
+                        onPressed: widget.onOpenCheckout,
+                        icon: const Icon(Icons.point_of_sale),
+                        label: const Text('Buka kasir'),
+                      ),
+                      OutlinedButton.icon(
+                        onPressed: widget.onOpenProducts,
+                        icon: const Icon(Icons.inventory_2_outlined),
+                        label: const Text('Produk'),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 12,
+            runSpacing: 12,
+            children: <Widget>[
+              _DashboardMetric(label: 'Produk', value: _products.toString(),
+                  icon: Icons.inventory_2_outlined),
+              _DashboardMetric(label: 'Transaksi lokal',
+                  value: _number('sale_count').toString(),
+                  icon: Icons.receipt_long),
+              _DashboardMetric(label: 'Penjualan lokal',
+                  value: _money(_number('revenue')),
+                  icon: Icons.payments_outlined),
+              _DashboardMetric(label: 'Antrean tertunda',
+                  value: _pending.toString(), icon: Icons.sync_problem,
+                  warning: _pending > 0),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Text('Operasi', style: Theme.of(context).textTheme.titleLarge),
+          const SizedBox(height: 8),
+          Card(
+            child: Column(
+              children: <Widget>[
+                ListTile(
+                  leading: const Icon(Icons.add_box_outlined),
+                  title: const Text('Terima stok'),
+                  subtitle: const Text('Lot, batch, biaya dan expiry/FEFO'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: widget.onOpenInventory,
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  leading: const Icon(Icons.assessment_outlined),
+                  title: const Text('Laporan lokal'),
+                  subtitle: const Text('Penjualan, HPP dan status outbox'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: widget.onOpenReports,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          const Card(
+            child: ListTile(
+              leading: Icon(Icons.cloud_off_outlined),
+              title: Text('Cloud sync belum aktif'),
+              subtitle: Text(
+                'Data perangkat bukan laporan konsolidasi. API Laravel, '
+                'autentikasi dan sinkronisasi harus diuji sebelum SaaS '
+                'multi-tenant digunakan.',
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
 }
 
-class _ServiceCard extends StatelessWidget {
-  final IconData icon;
-  final String title;
-  final String subtitle;
-
-  const _ServiceCard({
+class _DashboardMetric extends StatelessWidget {
+  const _DashboardMetric({
+    required this.label,
+    required this.value,
     required this.icon,
-    required this.title,
-    required this.subtitle,
+    this.warning = false,
   });
+
+  final String label;
+  final String value;
+  final IconData icon;
+  final bool warning;
 
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      width: 220,
+      width: 160,
       child: Card(
         child: Padding(
-          padding: const EdgeInsets.all(18),
+          padding: const EdgeInsets.all(14),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              Icon(icon, size: 32),
-              const SizedBox(height: 12),
-              Text(
-                title,
-                style: const TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
+              Icon(icon, color: warning ? Colors.orange : null),
+              const SizedBox(height: 8),
+              Text(label, style: Theme.of(context).textTheme.bodySmall),
               const SizedBox(height: 4),
-              Text(subtitle),
+              Text(
+                value,
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+              ),
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _ConfigurationScreen extends StatefulWidget {
+  const _ConfigurationScreen({
+    required this.configService,
+    required this.identityStore,
+  });
+
+  final ConfigService? configService;
+  final AppIdentityStore identityStore;
+
+  @override
+  State<_ConfigurationScreen> createState() => _ConfigurationScreenState();
+}
+
+class _ConfigurationScreenState extends State<_ConfigurationScreen> {
+  bool _loading = false;
+  String? _status;
+  Map<String, dynamic>? _configuration;
+  TenantFeatures? _features;
+
+  Future<void> _checkConfiguration() async {
+    final service = widget.configService;
+    if (service == null) {
+      setState(() {
+        _status = 'SUPABASE_URL / SUPABASE_PUBLISHABLE_KEY belum dikonfigurasi. '
+            'Aplikasi tetap bisa bekerja lokal.';
+      });
+      return;
+    }
+    setState(() {
+      _loading = true;
+      _status = null;
+    });
+    try {
+      final config = await service.getEffectiveConfig(
+        tenantId: widget.identityStore.tenantId,
+        deviceId: widget.identityStore.deviceId,
+        service: 'pos',
+      );
+      final features = await service.getFeatures(widget.identityStore.tenantId);
+      if (!mounted) return;
+      setState(() {
+        _configuration = config.value;
+        _features = features.value;
+        _status = config.fromCache || features.fromCache
+            ? 'Konfigurasi berasal dari cache lokal.'
+            : 'Supabase memberikan respons; validitas sesi dan otorisasi '
+                'perangkat tetap harus diverifikasi.';
+        _loading = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _status = 'Konfigurasi cloud tidak dapat diverifikasi. Periksa '
+            'session autentikasi, enrollment device, dan konfigurasi environment. '
+            'Detail: ' + error.toString();
+        _loading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Pengaturan')),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: <Widget>[
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text('Identitas lokal',
+                      style: Theme.of(context).textTheme.titleLarge),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'ID lokal bukan kredensial login atau bukti kepemilikan '
+                    'tenant. Jangan mengganti tenant/device untuk melewati '
+                    'otorisasi server.',
+                  ),
+                  const SizedBox(height: 12),
+                  SelectableText('Tenant: ' + widget.identityStore.tenantId),
+                  SelectableText('Device: ' + widget.identityStore.deviceId),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text('Konfigurasi cloud',
+                      style: Theme.of(context).textTheme.titleLarge),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Konfigurasi efektif mengikuti GLOBAL → TEMPLATE → '
+                    'TENANT → SERVICE → DEVICE. Layanan cloud memerlukan '
+                    'session yang sah dan device yang telah terdaftar.',
+                  ),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      onPressed: _loading ? null : _checkConfiguration,
+                      icon: _loading
+                          ? const SizedBox(width: 18, height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2))
+                          : const Icon(Icons.cloud_sync),
+                      label: Text(_loading
+                          ? 'Memeriksa...'
+                          : 'Periksa konfigurasi'),
+                    ),
+                  ),
+                  if (_status != null) ...<Widget>[
+                    const SizedBox(height: 12),
+                    Text(_status!),
+                  ],
+                  if (_features != null) ...<Widget>[
+                    const Divider(height: 24),
+                    Text('POS aktif: ' + (_features!.pos ? 'Ya' : 'Tidak')),
+                    Text('Akuntansi aktif: ' +
+                        (_features!.akuntansi ? 'Ya' : 'Tidak')),
+                  ],
+                  if (_configuration != null) ...<Widget>[
+                    const SizedBox(height: 8),
+                    Text('MDR efektif POS: ' +
+                        (_configuration!['mdr'] ??
+                                _configuration!['qris_mdr'] ?? '-')
+                            .toString()),
+                  ],
+                ],
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
