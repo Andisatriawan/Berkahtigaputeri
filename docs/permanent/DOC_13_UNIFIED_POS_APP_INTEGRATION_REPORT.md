@@ -32,7 +32,7 @@ Everyday product, cashier, inventory, reports, settings, and trial support-link 
 
 ### Main application and reachable screens
 
-- **`pos-app/lib/main.dart`:** initializes the persistent modular SQLite database and uses environment-supplied `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY` only when both exist. It does not silently default to staging. A publishable key and local tenant/device IDs are not authentication.
+- **`pos-app/lib/main.dart` and `pos-app/lib/features/auth/login_screen.dart`:** initialize `supabase_flutter` only when `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY` are supplied; provide email/password sign-in with a persisted Supabase session and an explicit local-only path when cloud login is unavailable. They do not silently default to staging. A publishable key and local tenant/device IDs are not authentication. The session login still does not enroll a device or resolve tenant membership.
 - **`pos-app/lib/features/home/home_screen.dart`:** provides reachable navigation for Beranda, Produk, Kasir, Stok, and Laporan. It includes cloud configuration diagnostics, privacy-policy and account-deletion request links, and a WhatsApp sales link. Cloud configuration requests are gated on a Supabase authenticated session and non-empty assigned tenant/device identifiers. This is a guard, not a completed user login or device-enrollment workflow.
 - **`pos-app/lib/features/products/product_screen.dart`:** provides local product create/edit/list/delete, protects transaction/inventory history, displays migrated products requiring tax review, and locks expiry-policy changes where physical lots exist. Initial stock must be recorded through inventory receiving.
 - **`pos-app/lib/features/pos/checkout_screen.dart`:** exposes a cashier cart, supported payment-method selection, Rupiah totals, and PPN using the existing payment service. It rejects products awaiting tax/data review at both UI and checkout-domain boundary. The user is explicitly told sales are stored locally and cloud sync is not active.
@@ -43,7 +43,7 @@ Everyday product, cashier, inventory, reports, settings, and trial support-link 
 ### Persistence, legacy data, and safety
 
 - **`pos-app/lib/core/database/pos_database.dart`:** increments the SQLite schema to version 3, adds `requires_review`, and creates legacy import/archive tables for fresh and upgraded databases.
-- **`pos-app/lib/core/database/legacy_trial_importer.dart`:** imports the former `berkah_pos.db` products, historical sales/items and original stock quantities one time into the modular database. It keeps old sales out of current accounting ledgers, sets imported product stock to zero, requires tax/data review before imported products can be sold, records old stock quantities separately for physical reconciliation, and leaves the old source file unchanged. An import marker makes subsequent attempts idempotent.
+- **`pos-app/lib/core/database/legacy_trial_importer.dart`:** imports the former `berkah_pos.db` products, historical sales/items and original stock quantities one time into the modular database. It keeps old sales out of current accounting ledgers, sets imported product stock to zero, requires tax/data review before imported products can be sold, records old stock quantities separately for physical reconciliation, and leaves the old source file unchanged. An import marker makes subsequent attempts idempotent. Startup records import errors visibly and offers a retry rather than deleting the source file.
 - **`pos-app/lib/features/products/repositories/sqlite_product_repository.dart`:** provides ordered listing; deletion protection for products with history; review/reconciliation helpers; guards that prevent a stale product edit from changing stock quantity; and a rule against changing expiry policy after lots exist.
 - **`pos-app/lib/features/products/models/product.dart` and `pos-app/lib/features/pos/checkout/sqlite_sale_repository.dart`:** carry the product review flag and reject checkout for products awaiting review.
 - **`pos-app/test/database/legacy_trial_importer_test.dart`:** adds a one-time importer test for products, archived sales/items, stock review status, preservation of the source file, and repeat-import behavior.
@@ -56,12 +56,12 @@ These are source-level test additions only; none of those tests is currently cer
 
 ### Android and release process
 
-- **`pos-app/android/app/build.gradle`:** uses the existing trial app ID/namespace `id.co.berkahtigaputeri.berkahpos`, target SDK 35, version name 1.1.0 and version code 2. Release builds fail closed if private signing configuration is absent, unless the test-only debug-signing property is explicitly enabled.
+- **`pos-app/android/app/build.gradle`:** uses the existing trial app ID/namespace `id.co.berkahtigaputeri.berkahpos`, target SDK 35, version name 1.1.0 and version code 2. Release builds fail closed if private signing configuration is absent, unless the test-only debug-signing property is explicitly enabled. In-place update compatibility still requires a certificate match to the accepted prior app; this has not been verified.
 - **`pos-app/android/app/src/main/AndroidManifest.xml`:** declares the combined app label and the network, camera, and Bluetooth permissions currently needed by the planned POS integrations.
 - **`pos-app/tool/prepare_android_host.sh`:** fills only missing Android host scaffold files and preserves the canonical Gradle/signing/manifest settings.
 - **`.github/workflows/pos-app-ci.yml`:** requests Flutter package resolution, Dart analysis, Flutter tests, Android host preparation, and a debug-only AAB compile check.
 - **`.github/workflows/berkah-pos-aab.yml`:** now builds the canonical `pos-app/` rather than `berkah-pos-trial/`, uses the configured Fedora self-hosted release runner, checks package/SDK identity, runs analysis/tests, and uses the existing `BERKAH_UPLOAD_*` GitHub Actions secrets when available. Publisher-signed and debug-only artifacts have different labels. Temporary signing files are removed after the job.
-- **`pos-app/pubspec.yaml`:** adds `url_launcher` and aligns version metadata to 1.1.0+2.
+- **`pos-app/pubspec.yaml`:** uses `supabase_flutter` for persisted Auth sessions, adds `url_launcher`, and aligns version metadata to 1.1.0+2.
 
 The release workflow source does not prove the required private signing secrets are configured, that the AAB builds, or that its signer matches the accepted app. Those require real workflow/output and certificate evidence.
 
