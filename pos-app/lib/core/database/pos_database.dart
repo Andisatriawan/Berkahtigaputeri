@@ -3,6 +3,8 @@
 import 'package:path/path.dart' as p;
 import 'package:sqflite/sqflite.dart';
 
+import 'legacy_trial_importer.dart';
+
 /// SQLite database for the local-first POS.
 ///
 /// Schema changes must increment [schemaVersion] and provide a migration.
@@ -14,9 +16,29 @@ class PosDatabase {
 
   final Database database;
 
-  static Future<PosDatabase> openDefault() async {
+  static Future<PosDatabase> openDefault({
+    DatabaseFactory? factory,
+  }) async {
     final root = await getDatabasesPath();
-    return openAt(p.join(root, fileName));
+    final selectedFactory = factory ?? databaseFactory;
+    final target = await openAt(
+      p.join(root, fileName),
+      factory: selectedFactory,
+    );
+    try {
+      // The old app used berkah_pos.db. Import it once into the new modular
+      // schema, preserving the original file and archiving sales whose old
+      // schema lacks tax/payment/costing details.
+      await LegacyTrialImporter.importIfPresent(
+        target: target.database,
+        legacyPath: p.join(root, 'berkah_pos.db'),
+        factory: selectedFactory,
+      );
+      return target;
+    } catch (_) {
+      await target.close();
+      rethrow;
+    }
   }
 
   static Future<PosDatabase> openAt(
