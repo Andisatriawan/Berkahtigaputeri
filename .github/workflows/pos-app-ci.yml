@@ -56,39 +56,12 @@ jobs:
         working-directory: pos-app
         run: flutter test --no-pub
 
-      # The repository tracks only a partial Android host. Generate the
-      # missing host inside this disposable CI checkout, retaining the
-      # committed canonical app Gradle configuration/package identity.
-      - name: Generate temporary Android host
-        shell: bash
-        run: |
-          set -euo pipefail
-          temp_dir="$(mktemp -d)"
-          trap 'rm -rf "$temp_dir"' EXIT
-
-          cp pos-app/android/app/build.gradle "$temp_dir/canonical-app-build.gradle"
-          flutter create \
-            --platforms=android \
-            --project-name pos \
-            --org com.berkahtigaputeri \
-            --overwrite \
-            "$temp_dir/seed"
-
-          rm -rf pos-app/android
-          mkdir -p pos-app/android
-          cp -a "$temp_dir/seed/android/." pos-app/android/
-          cp "$temp_dir/canonical-app-build.gradle" pos-app/android/app/build.gradle
-
-          cat > pos-app/android/gradle.properties <<'EOF'
-          org.gradle.jvmargs=-Xmx2G -XX:MaxMetaspaceSize=1G -XX:+HeapDumpOnOutOfMemoryError
-          android.useAndroidX=true
-          android.enableJetifier=true
-          org.gradle.workers.max=2
-          org.gradle.parallel=false
-          EOF
-
-          grep -q 'applicationId = "com.berkahtigaputeri.pos"' pos-app/android/app/build.gradle
-          grep -q 'namespace = "com.berkahtigaputeri.pos"' pos-app/android/app/build.gradle
+      # Generate any missing Android host files without modifying the canonical
+      # app Gradle file. This checkout is disposable and uses the same script
+      # developers can run locally before a debug build.
+      - name: Prepare Android host
+        working-directory: pos-app
+        run: bash tool/prepare_android_host.sh
 
       - name: Install Android SDK platforms
         uses: android-actions/setup-android@v3
