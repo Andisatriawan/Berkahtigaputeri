@@ -199,7 +199,7 @@ class _ProductScreenState extends State<ProductScreen> {
                               title: Text(product.nameId),
                               subtitle: Text(
                                 product.sku + ' · Stok ' +
-                                product.stockQty.toString() + expiry,
+                                product.stockQty.toString() + expiry + review,
                               ),
                               trailing: PopupMenuButton<String>(
                                 onSelected: (value) {
@@ -248,6 +248,7 @@ class _ProductEditorState extends State<_ProductEditor> {
   late final TextEditingController _minimumShelfLife;
   bool _ppnExempt = false;
   bool _trackExpiry = false;
+  bool _taxReviewConfirmed = false;
 
   @override
   void initState() {
@@ -311,6 +312,8 @@ class _ProductEditorState extends State<_ProductEditor> {
         stockQty: existing?.stockQty ?? 0,
         trackExpiry: _trackExpiry,
         minShelfLifeDays: _trackExpiry ? shelfLife : 0,
+        requiresReview: existing?.requiresReview == true &&
+            !_taxReviewConfirmed,
       ),
     );
   }
@@ -353,6 +356,27 @@ class _ProductEditorState extends State<_ProductEditor> {
                   keyboardType: TextInputType.number,
                   validator: (value) => _positiveInt(value, 'Harga'),
                 ),
+                if (widget.existing?.requiresReview == true) ...<Widget>[
+                  const Padding(
+                    padding: EdgeInsets.only(top: 12),
+                    child: Text(
+                      'Produk ini diimpor dari aplikasi trial. Klasifikasi '
+                      'PPN tidak tersedia di data lama. Pastikan status pajak '
+                      'yang benar sebelum mengaktifkannya untuk checkout.',
+                    ),
+                  ),
+                  CheckboxListTile(
+                    contentPadding: EdgeInsets.zero,
+                    value: _taxReviewConfirmed,
+                    onChanged: (value) => setState(
+                      () => _taxReviewConfirmed = value ?? false,
+                    ),
+                    title: const Text(
+                      'Saya sudah memeriksa klasifikasi PPN produk ini',
+                    ),
+                    controlAffinity: ListTileControlAffinity.leading,
+                  ),
+                ],
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,
                   value: _ppnExempt,
