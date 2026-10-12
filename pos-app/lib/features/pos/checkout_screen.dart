@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 
-import '../../products/models/product.dart';
-import '../../products/repositories/sqlite_product_repository.dart';
-import '../cart/sale_calculator.dart';
+import '../products/models/product.dart';
+import '../products/repositories/sqlite_product_repository.dart';
+import 'cart/sale_calculator.dart';
 import 'checkout/payment_service.dart';
 import 'checkout/sqlite_sale_repository.dart';
 
