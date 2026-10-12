@@ -44,6 +44,15 @@ class SqliteProductRepository {
     );
   }
 
+  /// Lists products in deterministic display order.
+  Future<List<Product>> listAll() async {
+    final rows = await _database.database.query(
+      'products',
+      orderBy: 'name_id COLLATE NOCASE, sku',
+    );
+    return rows.map(_fromRow).toList(growable: false);
+  }
+
   Future<Product?> findById(String id) async {
     final rows = await _database.database.query(
       'products',
