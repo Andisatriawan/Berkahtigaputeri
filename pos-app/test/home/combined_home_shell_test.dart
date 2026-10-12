@@ -45,7 +45,7 @@ void main() {
 
     await tester.tap(find.text('Stok'));
     await tester.pumpAndSettle();
-    expect(find.text('Terima stok'), findsOneWidget);
+    expect(find.text('Ringkasan stok lokal'), findsOneWidget);
 
     await tester.tap(find.text('Laporan'));
     await tester.pumpAndSettle();
