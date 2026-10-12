@@ -23,6 +23,12 @@
 
 The trial app's email-only status lookup is intentionally not used as authentication: knowing an email or reading an activation status does not prove the caller owns that account. Use the approved authenticated account/subscription API when that backend flow is implemented.
 
+## Android package and trial-data migration
+
+This integration retains the existing `pos-app/android/app/build.gradle` identity: application ID `com.berkahtigaputeri.pos`, version name `1.0.0`, version code `2`. The older trial app uses a different application ID (`id.co.berkahtigaputeri.berkahpos`) and a different SQLite file/schema (`berkah_pos.db`). This change does **not** make the unified app an in-place upgrade to the trial package and does **not** migrate existing trial-device data.
+
+Do not change package ID or signing identity without a reviewed release decision. Any legacy-data importer must map products/sales/lines into the new schema deliberately, preserve source values/audit lineage, and explicitly account for missing historical tax, discounts, payment details, inventory-cost layers, and journals. Historical totals must not be fabricated to make the legacy records appear fully accounted for.
+
 ## Local checks
 
 Run from this directory:
