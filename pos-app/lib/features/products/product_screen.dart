@@ -363,9 +363,10 @@ class _ProductEditorState extends State<_ProductEditor> {
                   const Padding(
                     padding: EdgeInsets.only(top: 12),
                     child: Text(
-                      'Produk ini diimpor dari aplikasi trial. Klasifikasi '
-                      'PPN tidak tersedia di data lama. Pastikan status pajak '
-                      'yang benar sebelum mengaktifkannya untuk checkout.',
+                      'Produk ini diimpor dari aplikasi trial. Data lama tidak '
+                      'menyimpan klasifikasi PPN di format POS baru. Periksa '
+                      'nama, SKU, harga jual, dan status PPN sebelum '
+                      'mengaktifkannya untuk checkout.',
                     ),
                   ),
                   CheckboxListTile(
@@ -375,7 +376,7 @@ class _ProductEditorState extends State<_ProductEditor> {
                       () => _taxReviewConfirmed = value ?? false,
                     ),
                     title: const Text(
-                      'Saya sudah memeriksa klasifikasi PPN produk ini',
+                      'Saya sudah memeriksa nama, SKU, harga, dan status PPN',
                     ),
                     controlAffinity: ListTileControlAffinity.leading,
                   ),
