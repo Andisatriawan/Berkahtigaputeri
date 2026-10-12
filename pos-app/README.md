@@ -35,9 +35,16 @@ flutter test
 
 ## Android compile check
 
-The tracked Android host is intentionally partial. The GitHub Actions workflow `.github/workflows/pos-app-ci.yml` generates the missing Android scaffold only in its disposable CI checkout, preserves the committed canonical app Gradle configuration, then runs a **debug-only** Android App Bundle build. That artifact is for compile verification only; it is not a production-signed release and must not be submitted to Play Console.
+The tracked Android host is intentionally partial. Prepare it locally, if missing, with:
 
-Production release signing and device/internal-track verification must be configured and validated separately. Never commit keystores, key.properties, or signing secrets.
+```sh
+bash tool/prepare_android_host.sh
+flutter build appbundle --debug
+```
+
+The script fills in only missing Android host files and preserves the existing canonical app Gradle configuration and app identity. Review any generated native files before committing them. The GitHub Actions workflow uses the same script in its disposable checkout, then runs a **debug-only** Android App Bundle compile check. That artifact is not a production-signed release and must not be submitted to Play Console.
+
+Production release signing and device/internal-track verification must be configured and validated separately. Never commit keystores, `key.properties`, or signing secrets.
 
 ## Permanent architecture rules
 
