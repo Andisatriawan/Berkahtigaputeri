@@ -64,5 +64,68 @@ void main() {
       );
       expect(await repository.findById('P-HISTORY'), isNotNull);
     });
+    test('editing product never overwrites stock ledger quantity', () async {
+      final database = await openTestDatabase();
+      addTearDown(database.close);
+      final repository = SqliteProductRepository(database);
+
+      await repository.upsert(
+        const Product(
+          id: 'P-STOCK',
+          sku: 'SKU-STOCK',
+          barcode: null,
+          nameId: 'Produk Stok',
+          price: 10000,
+          ppnExempt: false,
+          stockQty: 0,
+        ),
+      );
+      await repository.addInventoryLot(
+        id: 'LOT-STOCK',
+        productId: 'P-STOCK',
+        quantity: 2,
+        unitCost: 4000,
+        acquiredAtUtc: DateTime.utc(2026, 10, 12),
+      );
+
+      final staleProduct = (await repository.findById('P-STOCK'))!
+          .copyWith(nameId: 'Produk Stok Diperbarui', stockQty: 0);
+      await repository.upsert(staleProduct);
+
+      expect((await repository.findById('P-STOCK'))!.stockQty, 2);
+    });
+
+    test('does not change expiry policy after lots are recorded', () async {
+      final database = await openTestDatabase();
+      addTearDown(database.close);
+      final repository = SqliteProductRepository(database);
+
+      await repository.upsert(
+        const Product(
+          id: 'P-EXPIRY-LOCK',
+          sku: 'SKU-EXPIRY-LOCK',
+          barcode: null,
+          nameId: 'Produk Expiry Lock',
+          price: 10000,
+          ppnExempt: false,
+          stockQty: 0,
+        ),
+      );
+      await repository.addInventoryLot(
+        id: 'LOT-EXPIRY-LOCK',
+        productId: 'P-EXPIRY-LOCK',
+        quantity: 1,
+        unitCost: 5000,
+        acquiredAtUtc: DateTime.utc(2026, 10, 12),
+      );
+
+      final changed = (await repository.findById('P-EXPIRY-LOCK'))!
+          .copyWith(trackExpiry: true);
+      await expectLater(
+        repository.upsert(changed),
+        throwsA(isA<ProductValidationException>()),
+      );
+      expect((await repository.findById('P-EXPIRY-LOCK'))!.trackExpiry, isFalse);
+    });
   });
 }
