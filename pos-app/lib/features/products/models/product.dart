@@ -14,6 +14,7 @@ class Product {
     required this.stockQty,
     this.trackExpiry = false,
     this.minShelfLifeDays = 0,
+    this.requiresReview = false,
   });
 
   final String id;
@@ -31,6 +32,9 @@ class Product {
   /// Minimum remaining shelf life required at checkout.
   final int minShelfLifeDays;
 
+  /// Imported trial products require explicit tax classification review.
+  final bool requiresReview;
+
   Product copyWith({
     String? id,
     String? sku,
@@ -42,6 +46,7 @@ class Product {
     int? stockQty,
     bool? trackExpiry,
     int? minShelfLifeDays,
+    bool? requiresReview,
   }) {
     return Product(
       id: id ?? this.id,
@@ -53,6 +58,7 @@ class Product {
       stockQty: stockQty ?? this.stockQty,
       trackExpiry: trackExpiry ?? this.trackExpiry,
       minShelfLifeDays: minShelfLifeDays ?? this.minShelfLifeDays,
+      requiresReview: requiresReview ?? this.requiresReview,
     );
   }
 }
