@@ -5,7 +5,7 @@ on:
   push:
     branches: ["main"]
     paths:
-      - "berkah-pos-trial/**"
+      - "pos-app/**"
       - ".github/workflows/berkah-pos-aab.yml"
 
 permissions:
@@ -17,12 +17,13 @@ concurrency:
 
 jobs:
   build:
-    name: Validate Flutter and build Android App Bundle
+    name: Validate unified Flutter app and build Android App Bundle
+    # The registered Fedora runner is retained for the existing release process.
     runs-on: [self-hosted, Fedora]
     timeout-minutes: 60
     defaults:
       run:
-        working-directory: berkah-pos-trial
+        working-directory: pos-app
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -39,7 +40,6 @@ jobs:
           command -v flutter || true
           command -v sdkmanager || true
 
-
       - name: Set up Java 17
         uses: actions/setup-java@v4
         with:
@@ -50,10 +50,10 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install Android SDK Platform 35
+      - name: Install Android SDK platforms
         run: |
           yes | sdkmanager --licenses >/dev/null
-          sdkmanager "platforms;android-35" "build-tools;35.0.0"
+          sdkmanager "platforms;android-35" "platforms;android-36" "build-tools;35.0.0" "build-tools;36.0.0"
 
       - name: Set up Flutter stable
         uses: subosito/flutter-action@v2
@@ -61,11 +61,20 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Prepare Gradle wrapper files
-        run: bash tool/prepare_gradle_wrapper.sh
+      - name: Prepare canonical Android host
+        run: bash tool/prepare_android_host.sh
 
-      - name: Validate app identity, permissions, and forbidden integrations
-        run: python3 tool/verify_project.py
+      - name: Validate app identity and forbidden client secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q 'applicationId = "id.co.berkahtigaputeri.berkahpos"' android/app/build.gradle
+          grep -q 'namespace = "id.co.berkahtigaputeri.berkahpos"' android/app/build.gradle
+          grep -q 'targetSdk = 35' android/app/build.gradle
+          if grep -R -n -E 'SUPABASE_SERVICE_ROLE_KEY|service_role|DATABASE_URL=.*PASSWORD' lib; then
+            echo "Privileged server/database credentials must not be embedded in the Flutter app." >&2
+            exit 1
+          fi
 
       - name: Resolve Flutter packages
         run: flutter pub get
@@ -73,10 +82,10 @@ jobs:
       - name: Analyze Dart
         run: flutter analyze --no-pub
 
-      - name: Run widget tests
+      - name: Run Flutter tests
         run: flutter test --no-pub
 
-      - name: Configure release signing when publisher secrets are present
+      - name: Configure publisher signing when secrets are present
         id: signing
         shell: bash
         env:
@@ -99,35 +108,66 @@ jobs:
             echo "mode=release" >> "$GITHUB_OUTPUT"
           else
             echo "mode=debug" >> "$GITHUB_OUTPUT"
-            echo "::warning::Publisher signing secrets are not configured; the resulting AAB will be signed with the Android debug key and is for testing only, not Play Console upload."
+            echo "::warning::Release signing secrets are absent; this AAB is signed with the Android debug key and is only for testing."
           fi
 
-      - name: Build release AAB with publisher signing key
+      - name: Require cloud configuration for publisher-signed release
         if: steps.signing.outputs.mode == 'release'
-        run: flutter build appbundle --release
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "$SUPABASE_URL" || -z "$SUPABASE_PUBLISHABLE_KEY" ]]; then
+            echo "::error::A publisher-signed SaaS release requires SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY GitHub Actions secrets; refusing to build an accidentally local-only production package."
+            exit 1
+          fi
 
-      - name: Build test AAB with debug key
+      - name: Build publisher-signed AAB
+        if: steps.signing.outputs.mode == 'release'
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
+        run: |
+          flutter build appbundle --release \
+            --dart-define="SUPABASE_URL=$SUPABASE_URL" \
+            --dart-define="SUPABASE_PUBLISHABLE_KEY=$SUPABASE_PUBLISHABLE_KEY"
+
+      - name: Build test-only debug-signed AAB
         if: steps.signing.outputs.mode == 'debug'
         env:
           ORG_GRADLE_PROJECT_allowDebugReleaseSigning: "true"
         run: flutter build appbundle --release
 
-      - name: Verify generated AAB
+      - name: Verify generated AAB and report certificate fingerprint
+        shell: bash
+        env:
+          STORE_PASSWORD: ${{ secrets.BERKAH_UPLOAD_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.BERKAH_UPLOAD_KEY_ALIAS }}
         run: |
+          set -euo pipefail
           test -s build/app/outputs/bundle/release/app-release.aab
           ls -lh build/app/outputs/bundle/release/app-release.aab
+          if [[ "${{ steps.signing.outputs.mode }}" == "release" ]]; then
+            keytool -list -v -keystore android/app/berkah-pos-upload.jks \
+              -storepass "$STORE_PASSWORD" \
+              -alias "$KEY_ALIAS" |
+              grep -E 'Alias name:|SHA256:|SHA-256:'
+          fi
           {
-            echo "### Berkah POS App Bundle"
+            echo "### Berkah POS Unified App Bundle"
             echo ""
             echo "- Package: id.co.berkahtigaputeri.berkahpos"
-            echo "- Target SDK: 35 (kept as explicitly requested)"
-            echo "- Output: build/app/outputs/bundle/release/app-release.aab"
+            echo "- Version: 1.1.0 (versionCode 2)"
+            echo "- Target SDK: 35"
+            echo "- Output: pos-app/build/app/outputs/bundle/release/app-release.aab"
             if [[ "${{ steps.signing.outputs.mode }}" == "release" ]]; then
-              echo "- Signing: publisher upload key"
-              echo "- Artifact name: berkah-pos-release-aab"
+              echo "- Signing: configured publisher upload key; compare certificate SHA-256 with the previous accepted release before publishing"
+              echo "- Artifact name: berkah-pos-unified-release-aab"
             else
               echo "- Signing: Android debug key (testing only; not for Play Console submission)"
-              echo "- Artifact name: berkah-pos-test-aab-debug-signed"
+              echo "- Artifact name: berkah-pos-unified-test-aab-debug-signed"
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -135,8 +175,8 @@ jobs:
         if: steps.signing.outputs.mode == 'release'
         uses: actions/upload-artifact@v4
         with:
-          name: berkah-pos-release-aab
-          path: berkah-pos-trial/build/app/outputs/bundle/release/app-release.aab
+          name: berkah-pos-unified-release-aab
+          path: pos-app/build/app/outputs/bundle/release/app-release.aab
           if-no-files-found: error
           retention-days: 14
 
@@ -144,8 +184,8 @@ jobs:
         if: steps.signing.outputs.mode == 'debug'
         uses: actions/upload-artifact@v4
         with:
-          name: berkah-pos-test-aab-debug-signed
-          path: berkah-pos-trial/build/app/outputs/bundle/release/app-release.aab
+          name: berkah-pos-unified-test-aab-debug-signed
+          path: pos-app/build/app/outputs/bundle/release/app-release.aab
           if-no-files-found: error
           retention-days: 14
 

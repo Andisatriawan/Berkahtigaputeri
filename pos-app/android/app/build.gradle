@@ -1,12 +1,28 @@
-// pos-app/android/app/build.gradle
+import java.util.Properties
+
 plugins {
     id "com.android.application"
     id "org.jetbrains.kotlin.android"
     id "dev.flutter.flutter-gradle-plugin"
 }
 
+// Match the existing trial app's fail-closed signing behavior. Private signing
+// files are injected locally/through Actions secrets and never committed.
+def keystoreProperties = new Properties()
+def keystorePropertiesFile = rootProject.file("key.properties")
+if (keystorePropertiesFile.exists()) {
+    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+}
+def hasReleaseSigning = keystorePropertiesFile.exists() &&
+    keystoreProperties.getProperty("storeFile") &&
+    keystoreProperties.getProperty("storePassword") &&
+    keystoreProperties.getProperty("keyAlias") &&
+    keystoreProperties.getProperty("keyPassword")
+def allowDebugReleaseSigning =
+    project.findProperty("allowDebugReleaseSigning") == "true"
+
 android {
-    namespace = "com.berkahtigaputeri.pos"
+    namespace = "id.co.berkahtigaputeri.berkahpos"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -20,20 +36,47 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.berkahtigaputeri.pos"
-        minSdk = flutter.minSdkVersion
-        targetSdk = flutter.targetSdkVersion
+        // Deliberately preserve the package identity of berkah-pos-trial so
+        // an update can replace the old installation when signed by same key.
+        applicationId = "id.co.berkahtigaputeri.berkahpos"
+        minSdk = 24
+        targetSdk = 35
         versionCode = 2
-        versionName = "1.0.0"
+        versionName = "1.1.0"
+    }
+
+    signingConfigs {
+        release {
+            if (hasReleaseSigning) {
+                storeFile = rootProject.file(keystoreProperties.getProperty("storeFile"))
+                storePassword = keystoreProperties.getProperty("storePassword")
+                keyAlias = keystoreProperties.getProperty("keyAlias")
+                keyPassword = keystoreProperties.getProperty("keyPassword")
+            }
+        }
     }
 
     buildTypes {
         release {
-            // Production signing credentials must be supplied securely outside source control.
+            signingConfig = hasReleaseSigning ? signingConfigs.release : signingConfigs.debug
+            minifyEnabled = false
+            shrinkResources = false
         }
     }
 }
 
 flutter {
     source = "../.."
+}
+
+tasks.configureEach {
+    if (name == "bundleRelease" && !hasReleaseSigning && !allowDebugReleaseSigning) {
+        doFirst {
+            throw new GradleException(
+                "Release signing missing. Configure android/key.properties and " +
+                "the private keystore. For a testing-only AAB, explicitly set " +
+                "ORG_GRADLE_PROJECT_allowDebugReleaseSigning=true."
+            )
+        }
+    }
 }

@@ -1,0 +1,7 @@
+# Copy this file to android/key.properties and replace each placeholder.
+# Place the matching private keystore at android/app/berkah-pos-release.jks.
+# Never commit key.properties or any .jks/.keystore file.
+storeFile=app/berkah-pos-release.jks
+storePassword=REPLACE_WITH_LOCAL_SECRET
+keyAlias=REPLACE_WITH_EXISTING_ALIAS
+keyPassword=REPLACE_WITH_LOCAL_SECRET

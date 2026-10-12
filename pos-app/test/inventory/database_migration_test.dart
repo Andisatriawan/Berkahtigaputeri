@@ -91,6 +91,7 @@ void main() {
     final product = (await migrated.database.query('products')).single;
     expect(product['track_expiry'], 0);
     expect(product['min_shelf_life_days'], 0);
+    expect(product['requires_review'], 0);
     expect(product['stock_qty'], 2);
 
     final lot = (await migrated.database.query('inventory_lots')).single;
@@ -112,5 +113,8 @@ void main() {
         (await migrated.database.query('inventory_movements')).single;
     expect(opening['movement_type'], 'opening_balance');
     expect(opening['quantity_delta'], 2);
+
+    expect(await migrated.database.query('legacy_import_runs'), isEmpty);
+    expect(await migrated.database.query('legacy_sales_archive'), isEmpty);
   });
 }

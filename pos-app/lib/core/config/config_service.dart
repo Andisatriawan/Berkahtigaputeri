@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:developer' as developer;
 
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:supabase/supabase.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class TenantFeatures {
   final bool pos;
@@ -51,6 +51,10 @@ class ConfigService {
   final SharedPreferences _preferences;
 
   ConfigService(this._client, this._preferences);
+
+  /// True only when Supabase has an authenticated user session.
+  /// A publishable key plus tenant/device strings is not authentication.
+  bool get hasAuthenticatedSession => _client.auth.currentSession != null;
 
   Future<EffectiveConfigResult> getEffectiveConfig({
     required String tenantId,
