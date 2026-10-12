@@ -33,7 +33,7 @@ Everyday product, cashier, inventory, reports, settings, and trial support-link 
 ### Main application and reachable screens
 
 - **`pos-app/lib/main.dart` and `pos-app/lib/features/auth/login_screen.dart`:** initialize `supabase_flutter` only when `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY` are supplied; provide email/password sign-in with a persisted Supabase session and an explicit local-only path when cloud login is unavailable. They do not silently default to staging. A publishable key and local tenant/device IDs are not authentication. The session login still does not enroll a device or resolve tenant membership.
-- **`pos-app/lib/features/home/home_screen.dart`:** provides reachable navigation for Beranda, Produk, Kasir, Stok, and Laporan. It includes cloud configuration diagnostics, privacy-policy and account-deletion request links, and a WhatsApp sales link. Cloud configuration requests are gated on a Supabase authenticated session and non-empty assigned tenant/device identifiers. This is a guard, not a completed user login or device-enrollment workflow.
+- **`pos-app/lib/features/home/home_screen.dart`:** provides reachable navigation for Beranda, Produk, Kasir, Stok, and Laporan. It includes cloud configuration diagnostics, sign-out, privacy-policy and account-deletion request links, and a WhatsApp sales link. Cloud configuration requests are gated on a Supabase authenticated session and non-empty assigned tenant/device identifiers. Device enrollment and server-authoritative membership resolution are still outstanding.
 - **`pos-app/lib/features/products/product_screen.dart`:** provides local product create/edit/list/delete, protects transaction/inventory history, displays migrated products requiring tax review, and locks expiry-policy changes where physical lots exist. Initial stock must be recorded through inventory receiving.
 - **`pos-app/lib/features/pos/checkout_screen.dart`:** exposes a cashier cart, supported payment-method selection, Rupiah totals, and PPN using the existing payment service. It rejects products awaiting tax/data review at both UI and checkout-domain boundary. The user is explicitly told sales are stored locally and cloud sync is not active.
 - **`pos-app/lib/features/inventory/inventory_screen.dart`:** receives stock via existing inventory lot/cost-layer logic; requires lot/batch and expiry values where configured; shows legacy stock requiring manual reconciliation.
@@ -78,7 +78,7 @@ The release workflow source does not prove the required private signing secrets 
 1. Authenticated Laravel/PHP transaction APIs or a production Ubuntu/Docker deployment.
 2. An outbox worker/API that synchronizes full sales, sale items, stock movements and journals, provides server acknowledgement, and handles retry/idempotency/conflicts.
 3. Server-authoritative cross-device sales/inventory data and consolidated reports.
-4. A complete login/session and device-enrollment workflow for Supabase and Laravel.
+4. Device enrollment and server-authoritative tenant-membership resolution for the authenticated Supabase user, plus verification that persisted sessions interact correctly with the deployed RLS/RPC policies.
 5. Server-enforced subscription lifecycle, plan entitlements, payment webhooks, or offline grace rules.
 6. Executed cross-tenant security acceptance tests for SQL/RPC/API/reports/object-storage.
 7. Object-storage uploads, independent file backup, database restore drill, production monitoring, or security certification.
