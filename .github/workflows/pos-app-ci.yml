@@ -22,10 +22,10 @@ concurrency:
 jobs:
   validate:
     name: Analyze, test, and Android compile-check
-    # This repository's Android release workflow uses the Fedora self-hosted runner.
-    # Never run untrusted fork code on that runner.
+    # Use a disposable GitHub-hosted runner for repeatable validation.
+    # Never run untrusted fork code on a privileged self-hosted runner.
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: [self-hosted, Fedora]
+    runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
       - name: Checkout repository
