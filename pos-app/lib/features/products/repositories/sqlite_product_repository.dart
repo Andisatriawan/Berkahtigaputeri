@@ -281,42 +281,54 @@ class SqliteProductRepository {
     }
   }
 
+  /// Returns true once physical lot history exists for this product.
+  /// Expiry-tracking rules should not be changed after lots are recorded.
+  Future<bool> hasInventoryLots(String productId) async {
+    final rows = await _database.database.rawQuery(
+      'SELECT COUNT(*) AS value FROM inventory_lots WHERE product_id = ?',
+      <Object?>[productId.trim()],
+    );
+    return (rows.single['value']! as int) > 0;
+  }
+
   /// Deletes a product only when no inventory or transaction history refers
-  /// to it. Historical product masters must remain available for audit trails.
+  /// to it. The check and deletion are atomic to preserve auditability.
   Future<void> deleteIfUnused(String productId) async {
     final normalizedId = productId.trim();
     if (normalizedId.isEmpty) {
       throw const ProductValidationException('ID produk wajib diisi.');
     }
 
-    final references = await _database.database.rawQuery(
-      '''
-      SELECT
-        (SELECT COUNT(*) FROM sale_items WHERE product_id = ?) AS sale_count,
-        (SELECT COUNT(*) FROM inventory_lots WHERE product_id = ?) AS lot_count,
-        (SELECT COUNT(*) FROM stock_movements WHERE product_id = ?) AS movement_count
-      ''',
-      <Object?>[normalizedId, normalizedId, normalizedId],
-    );
-    final row = references.single;
-    final used = (row['sale_count']! as int) > 0 ||
-        (row['lot_count']! as int) > 0 ||
-        (row['movement_count']! as int) > 0;
-    if (used) {
-      throw const ProductValidationException(
-        'Produk memiliki riwayat transaksi atau persediaan. Nonaktifkan '
-        'melalui kebijakan katalog setelah status nonaktif tersedia.',
+    await _database.transaction<void>((transaction) async {
+      final references = await transaction.rawQuery(
+        '''
+        SELECT
+          (SELECT COUNT(*) FROM sale_items WHERE product_id = ?) AS sale_count,
+          (SELECT COUNT(*) FROM inventory_lots WHERE product_id = ?) AS lot_count,
+          (SELECT COUNT(*) FROM stock_movements WHERE product_id = ?) AS movement_count
+        ''',
+        <Object?>[normalizedId, normalizedId, normalizedId],
       );
-    }
+      final row = references.single;
+      final used = (row['sale_count']! as int) > 0 ||
+          (row['lot_count']! as int) > 0 ||
+          (row['movement_count']! as int) > 0;
+      if (used) {
+        throw const ProductValidationException(
+          'Produk memiliki riwayat transaksi atau persediaan. Nonaktifkan '
+          'melalui kebijakan katalog setelah status nonaktif tersedia.',
+        );
+      }
 
-    final changed = await _database.database.delete(
-      'products',
-      where: 'id = ?',
-      whereArgs: <Object?>[normalizedId],
-    );
-    if (changed != 1) {
-      throw ProductNotFoundException(normalizedId);
-    }
+      final changed = await transaction.delete(
+        'products',
+        where: 'id = ?',
+        whereArgs: <Object?>[normalizedId],
+      );
+      if (changed != 1) {
+        throw ProductNotFoundException(normalizedId);
+      }
+    });
   }
 
   void _validateReceipt({
