@@ -6,79 +6,95 @@
 **Implementation branch:** `feat/unified-pos-local-first-app`  
 **Pull request:** [#21 — unify trial POS flows with modular local-first app](https://github.com/berkah-pos/Berkahtigaputeri/pull/21)
 
-This is a current evidence report, not production certification. Apply the mandatory reporting standard in `docs/permanent/DOC_12_SAAS_DATABASE_OFFLINE_ARCHITECTURE_AND_AGENT_PROTOCOL.md`.
+This is an evidence report, not a production certification. Apply the mandatory report standard in `docs/permanent/DOC_12_SAAS_DATABASE_OFFLINE_ARCHITECTURE_AND_AGENT_PROTOCOL.md`.
 
-## 1. Decision
+## 1. Integration decision
 
-The modular `pos-app/` is the canonical integration target because it already has the richer local SQLite data model and business logic for checkout, inventory lots, FEFO allocation, FIFO costing, accounting journals, and an outbox event. The older `berkah-pos-trial/` remains a separate codebase and is not built into the same Android package by combining directories.
+The modular `pos-app/` is the canonical Flutter codebase because it contains the richer local SQLite data model and domain services for checkout, inventory lots, FEFO physical allocation, FIFO financial costing, balanced accounting journals, idempotency, and a durable outbox event.
 
-Everyday product/cashier/inventory/report screens are being brought into `pos-app/`, calling its existing repositories and services rather than adding the trial app's second, simpler `products/sales/sale_items` database schema.
+Everyday product, cashier, inventory, reports, settings, and trial support-link flows have been connected through this canonical app rather than concatenating the two Flutter projects or retaining two competing sales engines.
 
-**Migration boundary — important:** the existing trial APK is not an in-place update of this app. The trial package ID is `id.co.berkahtigaputeri.berkahpos` and its SQLite file is `berkah_pos.db`; the canonical modular app package ID is `com.berkahtigaputeri.pos` and its database is `berkahtigaputeri_pos.db`. This PR preserves the canonical modular app's package/signing identity. It does not migrate already-installed trial-app local data. Any future importer needs an explicit, tested mapping that preserves audit lineage and must not invent missing historical tax, discount, costing, or journal values.
+**Android compatibility decision:** the release package ID is set to the existing trial application ID, `id.co.berkahtigaputeri.berkahpos`, with version code 2 / version 1.1.0 and target SDK 35. This permits an in-place Android update only when the release is signed with the certificate required for the installed/accepted app. The signing-certificate match has **not** been verified by this source inspection. Never publish an AAB before comparing its SHA-256 signing certificate with the accepted prior upload/release key and testing the update path.
 
-## 2. Source evidence on the base revision
+**Local-data migration decision:** the trial app's `berkah_pos.db` is not deleted. A one-time importer archives incomplete trial sales/items separately and adds products in a blocked review state. It does **not** invent historic tax values, payment method, accounting journals, lot/cost history, or cloud synchronization. Old stock values are archived for manual physical reconciliation; they are not automatically activated as saleable quantity.
 
-- **SOURCE-VERIFIED:** `pos-app/lib/core/database/pos_database.dart` defines local SQLite tables for products, inventory lots, reservations, cost layers, inventory movements, sales, sale items, journals, journal lines, stock movements, and outbox events.
-- **SOURCE-VERIFIED:** `pos-app/lib/features/pos/checkout/sqlite_sale_repository.dart` writes checkout sale details, FEFO allocations, FIFO cost consumption, accounting journal, stock movements, and one pending outbox event inside the same SQLite transaction. It has transaction-ID idempotency/fingerprint checks.
-- **SOURCE-VERIFIED:** `pos-app/lib/features/pos/checkout/payment_service.dart` exposes payment methods cash, QRIS and bank transfer, validates requests, and delegates to a sale repository.
-- **SOURCE-VERIFIED:** `pos-app/lib/features/products/repositories/sqlite_product_repository.dart` provides product and lot operations.
-- **SOURCE-VERIFIED:** `pos-app/lib/core/config/config_service.dart` uses Supabase configuration RPC/data and local cache.
-- **SOURCE-VERIFIED:** `pos-app/lib/features/home/home_screen.dart` previously exposed mainly UAT tenant/device configuration and effective-config status; it did not provide a reachable cashier navigation.
-- **DOC-ASSERTED / source inventory:** `pos-app/README.md` says the Android host is partial and previous app-host generation occurs only in a CI checkout.
-- **SOURCE-VERIFIED:** `berkah-pos-trial/lib/main.dart` contains local product CRUD, SQLite checkout, local reports, an email-only activation-status lookup, and privacy/delete-account/WhatsApp links. Its status lookup does not authenticate account ownership.
-- **DOC-ASSERTED:** `docs/HARDENING/TENANT_ISOLATION_TEST.md` says full adversarial two-tenant database testing remains not verified. `docs/permanent/DOC_11_P0_SECURITY_VERIFICATION_20261008.md` says the described Supabase target is staging and lists production security gates that remain open.
+## 2. Source evidence found on the base revision
+
+- **SOURCE-VERIFIED:** `pos-app/lib/core/database/pos_database.dart` defines the modular SQLite schema for products, physical lots, reservations, cost layers, inventory movements, sales, sale items, journals, journal lines, stock movements, and outbox events.
+- **SOURCE-VERIFIED:** `pos-app/lib/features/pos/checkout/sqlite_sale_repository.dart` performs sale, line, FEFO lot allocation, FIFO cost consumption, journal, stock movement, and outbox writes inside one local SQLite transaction. It has transaction-ID fingerprint/idempotency checks.
+- **SOURCE-VERIFIED:** `pos-app/lib/features/pos/checkout/payment_service.dart` exposes cash, QRIS and bank-transfer payment-method values and delegates validated requests to the sale repository.
+- **SOURCE-VERIFIED:** `pos-app/lib/features/products/repositories/sqlite_product_repository.dart` provides product and inventory receipt operations.
+- **SOURCE-VERIFIED:** `pos-app/lib/core/config/config_service.dart` resolves/caches Supabase effective configuration. Its protected server paths require the appropriate authenticated session/tenant/device authorization.
+- **SOURCE-VERIFIED:** `berkah-pos-trial/lib/main.dart` contains local product CRUD, local checkout and reports, an email-only activation status lookup, and privacy/account-deletion/WhatsApp links. The email status lookup is not evidence of authenticated account ownership.
+- **DOC-ASSERTED:** `docs/HARDENING/TENANT_ISOLATION_TEST.md` says adversarial two-tenant testing remains unverified. `docs/permanent/DOC_11_P0_SECURITY_VERIFICATION_20261008.md` identifies the described Supabase target as staging and lists production security gates that remain open.
 
 ## 3. Implementation changes on the feature branch
 
-The following changes have been made on `feat/unified-pos-local-first-app`:
+### Main application and reachable screens
 
-- **`pos-app/lib/main.dart`:** opens the canonical persistent `PosDatabase`. Supabase configuration is optional at build time through `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY`; the app no longer silently defaults to the documented staging project. A publishable key and local tenant/device IDs are not authentication.
-- **`pos-app/lib/features/home/home_screen.dart`:** replaces the config-only landing screen with dashboard and navigation for Beranda, Produk, Kasir, Stok and Laporan; retains cloud configuration diagnostics and local tenant/device display. Adds privacy-policy, account-deletion-request, and WhatsApp sales links. These links are external destinations; they do not certify backend account lifecycle processing.
-- **`pos-app/lib/features/products/repositories/sqlite_product_repository.dart`:** adds deterministic product listing and deletion guarded against existing sale, inventory-lot, or stock-movement history.
-- **`pos-app/lib/features/products/product_screen.dart`:** local product create/edit/list and guarded delete UI. Stock is not manually overwritten from the product form; stock receipts go through inventory-lot/cost-layer logic.
-- **`pos-app/lib/features/pos/checkout_screen.dart`:** cashier UI using the pre-existing PaymentService/SQLite sale repository, product snapshot pricing, PPN calculator, and supported payment-method enum. It deliberately tells the user that the sale is local and cloud sync is not active.
-- **`pos-app/lib/features/inventory/inventory_screen.dart`:** receives stock using the existing lot/cost-layer operation and requires batch/expiry for expiry-tracked products.
-- **`pos-app/lib/features/home/reports_screen.dart`:** device-local sales/HPP reporting and a count of non-acknowledged outbox events. It explicitly warns that this is not consolidated multi-device reporting.
-- **`pos-app/pubspec.yaml`:** adds `url_launcher` for privacy, delete-account request, and support links.
-- **`pos-app/test/home/combined_home_shell_test.dart`:** adds a navigation smoke test using an in-memory SQLite database.
-- **`pos-app/tool/prepare_android_host.sh`:** safely fills in missing Android host files without overwriting existing files or canonical app identity/configuration.
-- **`pos-app/android/app/src/main/AndroidManifest.xml`:** preserves the Berkah POS app label and existing POS/network permission allowlist in the tracked native host contract.
-- **`pos-app/test/products/sqlite_product_repository_test.dart`:** covers product listing/deletion and rejection of deleting a product with inventory-lot history.
-- **`.github/workflows/pos-app-ci.yml`:** adds Dart analysis/tests plus host preparation via the shared script and a debug-only AAB compile check. Generated host files are confined to the disposable CI checkout.
-- **`pos-app/README.md`:** documents reachable screens, local-first boundaries, environment configuration, build/test commands, and the pending cloud sync API.
+- **`pos-app/lib/main.dart`:** initializes the persistent modular SQLite database and uses environment-supplied `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY` only when both exist. It does not silently default to staging. A publishable key and local tenant/device IDs are not authentication.
+- **`pos-app/lib/features/home/home_screen.dart`:** provides reachable navigation for Beranda, Produk, Kasir, Stok, and Laporan. It includes cloud configuration diagnostics, privacy-policy and account-deletion request links, and a WhatsApp sales link. Cloud configuration requests are gated on a Supabase authenticated session and non-empty assigned tenant/device identifiers. This is a guard, not a completed user login or device-enrollment workflow.
+- **`pos-app/lib/features/products/product_screen.dart`:** provides local product create/edit/list/delete, protects transaction/inventory history, displays migrated products requiring tax review, and locks expiry-policy changes where physical lots exist. Initial stock must be recorded through inventory receiving.
+- **`pos-app/lib/features/pos/checkout_screen.dart`:** exposes a cashier cart, supported payment-method selection, Rupiah totals, and PPN using the existing payment service. It rejects products awaiting tax/data review at both UI and checkout-domain boundary. The user is explicitly told sales are stored locally and cloud sync is not active.
+- **`pos-app/lib/features/inventory/inventory_screen.dart`:** receives stock via existing inventory lot/cost-layer logic; requires lot/batch and expiry values where configured; shows legacy stock requiring manual reconciliation.
+- **`pos-app/lib/features/home/reports_screen.dart`:** shows device-local sales/HPP and pending outbox count, and separately labelled legacy archived totals/transactions. Legacy archive totals are not included in current sales/accounting totals. Archived cashier email is not displayed in the report list.
+- **`pos-app/README.md`:** explains the canonical app, local-only state, authentication boundary, build instructions, and unimplemented cloud sync.
 
-The weaker email-only trial status check is intentionally not copied as authentication. An email address or activation status does not prove caller identity. A proper authenticated account/subscription API must be added under the approved SaaS architecture.
+### Persistence, legacy data, and safety
+
+- **`pos-app/lib/core/database/pos_database.dart`:** increments the SQLite schema to version 3, adds `requires_review`, and creates legacy import/archive tables for fresh and upgraded databases.
+- **`pos-app/lib/core/database/legacy_trial_importer.dart`:** imports the former `berkah_pos.db` products, historical sales/items and original stock quantities one time into the modular database. It keeps old sales out of current accounting ledgers, sets imported product stock to zero, requires tax/data review before imported products can be sold, records old stock quantities separately for physical reconciliation, and leaves the old source file unchanged. An import marker makes subsequent attempts idempotent.
+- **`pos-app/lib/features/products/repositories/sqlite_product_repository.dart`:** provides ordered listing; deletion protection for products with history; review/reconciliation helpers; guards that prevent a stale product edit from changing stock quantity; and a rule against changing expiry policy after lots exist.
+- **`pos-app/lib/features/products/models/product.dart` and `pos-app/lib/features/pos/checkout/sqlite_sale_repository.dart`:** carry the product review flag and reject checkout for products awaiting review.
+- **`pos-app/test/database/legacy_trial_importer_test.dart`:** adds a one-time importer test for products, archived sales/items, stock review status, preservation of the source file, and repeat-import behavior.
+- **`pos-app/test/pos/checkout/unreviewed_product_checkout_test.dart`:** asserts an unreviewed product is rejected without a sale/journal/outbox side effect.
+- **`pos-app/test/products/sqlite_product_repository_test.dart`:** covers product listing/deletion guards, stock-ledger preservation, and expiry-policy protection.
+- **`pos-app/test/inventory/database_migration_test.dart`:** updated for the version-3 review flag and archive tables.
+- **`pos-app/test/home/combined_home_shell_test.dart`:** adds a navigation smoke test for the combined screen shell.
+
+These are source-level test additions only; none of those tests is currently certified as executed.
+
+### Android and release process
+
+- **`pos-app/android/app/build.gradle`:** uses the existing trial app ID/namespace `id.co.berkahtigaputeri.berkahpos`, target SDK 35, version name 1.1.0 and version code 2. Release builds fail closed if private signing configuration is absent, unless the test-only debug-signing property is explicitly enabled.
+- **`pos-app/android/app/src/main/AndroidManifest.xml`:** declares the combined app label and the network, camera, and Bluetooth permissions currently needed by the planned POS integrations.
+- **`pos-app/tool/prepare_android_host.sh`:** fills only missing Android host scaffold files and preserves the canonical Gradle/signing/manifest settings.
+- **`.github/workflows/pos-app-ci.yml`:** requests Flutter package resolution, Dart analysis, Flutter tests, Android host preparation, and a debug-only AAB compile check.
+- **`.github/workflows/berkah-pos-aab.yml`:** now builds the canonical `pos-app/` rather than `berkah-pos-trial/`, uses the configured Fedora self-hosted release runner, checks package/SDK identity, runs analysis/tests, and uses the existing `BERKAH_UPLOAD_*` GitHub Actions secrets when available. Publisher-signed and debug-only artifacts have different labels. Temporary signing files are removed after the job.
+- **`pos-app/pubspec.yaml`:** adds `url_launcher` and aligns version metadata to 1.1.0+2.
+
+The release workflow source does not prove the required private signing secrets are configured, that the AAB builds, or that its signer matches the accepted app. Those require real workflow/output and certificate evidence.
 
 ## 4. Execution and validation evidence
 
-- **SOURCE-VERIFIED:** Changed files were fetched from the feature branch after writing to confirm they exist.
-- **TEST-EXECUTED:** No Flutter test suite or Dart analyzer result is yet available from this environment.
-- **CI-OBSERVED:** GitHub Actions created runs for `Canonical POS App CI`, including `38256345772`, `38256650643`, `38256908296`, `38257276346`, `38257716462`, and `38257779580`. They all concluded `startup_failure` before jobs started (the Jobs API returned an empty list). This is not a code test result and does not establish whether the source compiles. A runner/Actions startup problem remains a blocker; obtain a run that actually starts its job before claiming a validation result.
-- **NOT RUN:** `flutter pub get`, `flutter analyze`, `flutter test`, Android bundle build, physical-device installation, offline crash/retry tests, live Supabase authentication checks, tenant A/B adversarial tests, Laravel integration tests, and production deployment checks.
-- **PR:** Pull request #21 is a draft and is not merged.
+- **SOURCE-VERIFIED:** changed source and workflow files were fetched from the implementation branch after edits.
+- **TEST-EXECUTED:** no Flutter analyzer or test-suite result is available from this environment.
+- **CI-OBSERVED:** GitHub Actions created runs for `Canonical POS App CI`, including run IDs `38256345772`, `38256650643`, `38256908296`, and `38264663514`. Reported conclusions were `startup_failure`; the jobs endpoint returned an empty list. These are workflow-startup failures, not code test results, and do not prove the app compiles or fails to compile.
+- **NOT RUN:** `flutter pub get`, `flutter analyze`, `flutter test`, Android AAB build, Android device installation/update, live Supabase authentication, two-tenant hostile-access tests, offline crash/retry, cloud sync, Laravel integration, production deployment, database restore, or release-certificate comparison.
+- **PR:** [#21](https://github.com/berkah-pos/Berkahtigaputeri/pull/21) remains a draft and is not merged.
 
-## 5. Unimplemented or unverified boundaries
+## 5. Explicitly not delivered by this UI integration
 
-These must not be described as delivered by this screen integration:
+1. Authenticated Laravel/PHP transaction APIs or a production Ubuntu/Docker deployment.
+2. An outbox worker/API that synchronizes full sales, sale items, stock movements and journals, provides server acknowledgement, and handles retry/idempotency/conflicts.
+3. Server-authoritative cross-device sales/inventory data and consolidated reports.
+4. A complete login/session and device-enrollment workflow for Supabase and Laravel.
+5. Server-enforced subscription lifecycle, plan entitlements, payment webhooks, or offline grace rules.
+6. Executed cross-tenant security acceptance tests for SQL/RPC/API/reports/object-storage.
+7. Object-storage uploads, independent file backup, database restore drill, production monitoring, or security certification.
+8. Physical printer/scanner integrations and verified account deletion workflow.
+9. Verified signing-key match and Play Console update compatibility.
 
-1. An authenticated Laravel/PHP transaction API and production deployment on Ubuntu/Docker.
-2. A cloud outbox sync worker/API that uploads complete sales, sale lines, stock movements and journals, handles idempotency, returns acknowledgements, and resolves failures.
-3. A durable cross-device cloud schema and authoritative consolidated reports.
-4. A proven authentication/session and device-enrollment flow compatible with protected Supabase config/RLS.
-5. Subscription lifecycle, server-enforced entitlements, payment provider/webhooks, and offline grace policy.
-6. Tenant-isolation acceptance tests for ordinary authenticated users across SQL/RPC/API/report/storage paths.
-7. Object-storage upload/download, file access policies, independent file backups, database restore drills, monitoring and production security certification.
-8. Physical printer/scanner integrations, formal receipt output, end-to-end trial/activation/account deletion workflow, and Play Console release signing verification.
+## 6. Required next gates
 
-## 6. Next actions and acceptance gates
-
-1. Resolve why GitHub Actions cannot start a job; obtain a run that executes a job and reports results.
-2. Fix all Dart analysis, unit-test, widget-test, and Android compile failures; attach current revision and pass output.
-3. Add tests for product create/edit/delete guards and checkout UI success/failure behavior.
-4. Implement and security-test the authenticated cloud API and durable outbox synchronization before calling sales cloud-synchronized.
-5. Execute offline crash/retry, idempotency, stock reconciliation, and tenant A/B hostile-access tests.
-6. Keep this PR in draft/unmerged state until required CI results and review are available. No production readiness claim is allowed before the SaaS architecture milestone gates are met.
+1. Diagnose GitHub Actions startup failure and obtain a run that actually executes a job.
+2. Fix all Dart analyzer, test, and Android compile errors from real output.
+3. Test a product-add → receive stock → checkout → report journey on an Android device.
+4. Test migration from a copied trial database and verify source preservation, review gating, and correct legacy archive counts.
+5. Verify the release AAB's signing-certificate fingerprint against the existing accepted upload/release key before distributing it as an update.
+6. Implement and security-test authenticated cloud sync, idempotency, tenant A/B isolation, subscription enforcement, backup/restore, and monitoring before production SaaS launch.
+7. Keep this PR in draft/unmerged state until CI results and human review are available.
 
 ## Acceptance status
 
-**PARTIAL / NOT VERIFIED.** Screen integration source has been written, but CI startup failures mean compilation/tests have not been confirmed. No SaaS cloud synchronization or production tenant-isolation claim is being made.
+**PARTIAL / NOT VERIFIED.** Source integration work is present on the feature branch, and release identity plus a non-destructive legacy import have been prepared. No successful build/test run, device test, verified certificate match, SaaS cloud synchronization, or production tenant-isolation result is available. Do not publish or describe this branch as a production-ready SaaS release.
