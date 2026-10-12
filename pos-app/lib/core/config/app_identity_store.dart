@@ -1,8 +1,8 @@
 import 'package:shared_preferences/shared_preferences.dart';
 
 class AppIdentityStore {
-  static const String defaultTenantId = 'berkah_sumber';
-  static const String defaultDeviceId = 'infinix_xos_123';
+  static const String defaultTenantId = '';
+  static const String defaultDeviceId = '';
 
   static const String _tenantKey = 'p6.tenant_id';
   static const String _deviceKey = 'p6.device_id';
