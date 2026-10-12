@@ -14,58 +14,75 @@ class SqliteProductRepository {
   Future<void> upsert(Product product) async {
     _validate(product);
 
-    final existingRows = await _database.database.query(
-      'products',
-      where: 'id = ?',
-      whereArgs: <Object?>[product.id],
-      limit: 1,
-    );
-    if (existingRows.isEmpty && product.stockQty != 0) {
-      throw const ProductValidationException(
-        'Produk baru harus dibuat dengan stok nol. Catat stok awal melalui '
-        'penerimaan persediaan agar lot dan biaya HPP tercatat.',
-      );
+    if (product.id.trim().isEmpty) {
+      throw const ProductValidationException('ID produk wajib diisi.');
     }
-    if (existingRows.isNotEmpty) {
-      final current = _fromRow(existingRows.single);
-      if (current.trackExpiry != product.trackExpiry &&
-          await hasInventoryLots(product.id)) {
-        throw const ProductValidationException(
-          'Pelacakan kedaluwarsa tidak dapat diubah setelah lot persediaan '
-          'tercatat. Selesaikan stok lama terlebih dahulu.',
-        );
-      }
+    if (product.stockQty < 0) {
+      throw const ProductValidationException('Stok tidak boleh negatif.');
     }
 
-    await _database.database.rawInsert(
-      '''
-      INSERT INTO products(
-        id, sku, barcode, name_id, price, ppn_exempt, stock_qty,
-        track_expiry, min_shelf_life_days, requires_review
-      ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(id) DO UPDATE SET
-        sku = excluded.sku,
-        barcode = excluded.barcode,
-        name_id = excluded.name_id,
-        price = excluded.price,
-        ppn_exempt = excluded.ppn_exempt,
-        track_expiry = excluded.track_expiry,
-        min_shelf_life_days = excluded.min_shelf_life_days,
-        requires_review = excluded.requires_review
-      ''',
-      <Object?>[
-        product.id,
-        product.sku,
-        product.barcode,
-        product.nameId,
-        product.price,
-        product.ppnExempt ? 1 : 0,
-        product.stockQty,
-        product.trackExpiry ? 1 : 0,
-        product.minShelfLifeDays,
-        product.requiresReview ? 1 : 0,
-      ],
-    );
+    // Keep the expiry policy check and product update in one SQLite transaction
+    // so a concurrent stock receipt cannot create a lot between the check and
+    // the update. Stock itself is ledger-owned and is never overwritten here.
+    await _database.transaction<void>((transaction) async {
+      final existingRows = await transaction.query(
+        'products',
+        where: 'id = ?',
+        whereArgs: <Object?>[product.id],
+        limit: 1,
+      );
+      if (existingRows.isEmpty && product.stockQty != 0) {
+        throw const ProductValidationException(
+          'Produk baru harus dibuat dengan stok nol. Catat stok awal melalui '
+          'penerimaan persediaan agar lot dan biaya HPP tercatat.',
+        );
+      }
+      if (existingRows.isNotEmpty) {
+        final current = _fromRow(existingRows.single);
+        if (current.trackExpiry != product.trackExpiry) {
+          final lotCount = await transaction.rawQuery(
+            'SELECT COUNT(*) AS value FROM inventory_lots WHERE product_id = ?',
+            <Object?>[product.id],
+          );
+          if ((lotCount.single['value']! as int) > 0) {
+            throw const ProductValidationException(
+              'Pelacakan kedaluwarsa tidak dapat diubah setelah lot persediaan '
+              'tercatat. Selesaikan stok lama terlebih dahulu.',
+            );
+          }
+        }
+      }
+
+      await transaction.rawInsert(
+        '''
+        INSERT INTO products(
+          id, sku, barcode, name_id, price, ppn_exempt, stock_qty,
+          track_expiry, min_shelf_life_days, requires_review
+        ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+          sku = excluded.sku,
+          barcode = excluded.barcode,
+          name_id = excluded.name_id,
+          price = excluded.price,
+          ppn_exempt = excluded.ppn_exempt,
+          track_expiry = excluded.track_expiry,
+          min_shelf_life_days = excluded.min_shelf_life_days,
+          requires_review = excluded.requires_review
+        ''',
+        <Object?>[
+          product.id,
+          product.sku,
+          product.barcode,
+          product.nameId,
+          product.price,
+          product.ppnExempt ? 1 : 0,
+          product.stockQty,
+          product.trackExpiry ? 1 : 0,
+          product.minShelfLifeDays,
+          product.requiresReview ? 1 : 0,
+        ],
+      );
+    });
   }
 
   /// Lists products in deterministic display order.
