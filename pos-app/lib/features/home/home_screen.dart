@@ -660,7 +660,11 @@ class _ConfigurationScreenState extends State<_ConfigurationScreen> {
                   'Akhiri sesi akun ini pada perangkat. Data lokal tetap '
                   'tersimpan pada perangkat.',
                 ),
-                onTap: () async => widget.onSignOut!(),
+                onTap: () async {
+                  final signOut = widget.onSignOut;
+                  Navigator.of(context).pop();
+                  if (signOut != null) await signOut();
+                },
               ),
             ),
           ],
