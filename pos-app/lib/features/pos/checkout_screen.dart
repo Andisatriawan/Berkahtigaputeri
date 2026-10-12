@@ -90,6 +90,17 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   }
 
   void _changeQuantity(Product product, int delta) {
+    if (product.requiresReview) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Tinjau klasifikasi PPN produk ' + product.nameId +
+            ' sebelum checkout.',
+          ),
+        ),
+      );
+      return;
+    }
     final next = (_cart[product.id] ?? 0) + delta;
     setState(() {
       if (next <= 0) {
@@ -345,12 +356,14 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                           title: Text(product.nameId),
                           subtitle: Text(
                             product.sku + ' · ' + _money(product.price) +
-                            ' · Stok ' + product.stockQty.toString(),
+                            ' · Stok ' + product.stockQty.toString() +
+                            (product.requiresReview ? ' · PERLU TINJAU PPN' : ''),
                           ),
                           trailing: IconButton(
                             tooltip: 'Tambahkan ke keranjang',
-                            onPressed: _processing || product.stockQty <=
-                                    (_cart[product.id] ?? 0)
+                            onPressed: _processing ||
+                                    product.requiresReview ||
+                                    product.stockQty <= (_cart[product.id] ?? 0)
                                 ? null
                                 : () => _changeQuantity(product, 1),
                             icon: const Icon(Icons.add_shopping_cart),
