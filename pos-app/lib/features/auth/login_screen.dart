@@ -229,7 +229,8 @@ class _LoginScreenState extends State<LoginScreen> {
               style: TextStyle(color: Theme.of(context).colorScheme.error),
             ),
           ],
-          if (widget.configurationMessage != null) ...<Widget>[
+          if (widget.configurationMessage != null &&
+              widget.configurationMessage!.trim().isNotEmpty) ...<Widget>[
             const SizedBox(height: 8),
             Text(
               widget.configurationMessage!,
