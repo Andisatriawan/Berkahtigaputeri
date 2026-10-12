@@ -123,14 +123,17 @@ jobs:
 
       - name: Verify generated AAB and report certificate fingerprint
         shell: bash
+        env:
+          STORE_PASSWORD: ${{ secrets.BERKAH_UPLOAD_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.BERKAH_UPLOAD_KEY_ALIAS }}
         run: |
           set -euo pipefail
           test -s build/app/outputs/bundle/release/app-release.aab
           ls -lh build/app/outputs/bundle/release/app-release.aab
           if [[ "${{ steps.signing.outputs.mode }}" == "release" ]]; then
             keytool -list -v -keystore android/app/berkah-pos-upload.jks \
-              -storepass "${{ secrets.BERKAH_UPLOAD_KEYSTORE_PASSWORD }}" \
-              -alias "${{ secrets.BERKAH_UPLOAD_KEY_ALIAS }}" |
+              -storepass "$STORE_PASSWORD" \
+              -alias "$KEY_ALIAS" |
               grep -E 'Alias name:|SHA256:|SHA-256:'
           fi
           {
