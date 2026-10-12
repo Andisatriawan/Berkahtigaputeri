@@ -16,6 +16,8 @@ class ReportsScreen extends StatefulWidget {
 class _ReportsScreenState extends State<ReportsScreen> {
   Map<String, Object?> _summary = const <String, Object?>{};
   List<Map<String, Object?>> _recent = const <Map<String, Object?>>[];
+  Map<String, Object?> _legacySummary = const <String, Object?>{};
+  List<Map<String, Object?>> _legacyRecent = const <Map<String, Object?>>[];
   int _pendingSync = 0;
   bool _loading = true;
   String? _error;
@@ -55,6 +57,25 @@ class _ReportsScreenState extends State<ReportsScreen> {
         orderBy: 'created_at_utc DESC',
         limit: 25,
       );
+      final legacySummary = (await db.rawQuery(
+        '''
+        SELECT COUNT(*) AS sale_count,
+               COALESCE(SUM(total_amount), 0) AS revenue
+        FROM legacy_sales_archive
+        '''
+      )).single;
+      final legacyRecent = await db.query(
+        'legacy_sales_archive',
+        columns: <String>[
+          'original_sale_id',
+          'total_amount',
+          'item_count',
+          'email',
+          'created_at',
+        ],
+        orderBy: 'created_at DESC, original_sale_id DESC',
+        limit: 25,
+      );
       final pending = (await db.rawQuery(
         "SELECT COUNT(*) AS value FROM outbox_events WHERE status <> 'acknowledged'",
       )).single['value']! as int;
@@ -62,6 +83,8 @@ class _ReportsScreenState extends State<ReportsScreen> {
       setState(() {
         _summary = summary;
         _recent = recent;
+        _legacySummary = legacySummary;
+        _legacyRecent = legacyRecent;
         _pendingSync = pending;
         _loading = false;
       });
@@ -75,6 +98,9 @@ class _ReportsScreenState extends State<ReportsScreen> {
   }
 
   int _intValue(String key) => (_summary[key] as num?)?.toInt() ?? 0;
+
+  int _intValueFrom(Map<String, Object?> source, String key) =>
+      (source[key] as num?)?.toInt() ?? 0;
 
   String _money(int amount) {
     final digits = amount.toString();
@@ -155,6 +181,52 @@ class _ReportsScreenState extends State<ReportsScreen> {
               ),
             ),
           ),
+          if (_intValueFrom(_legacySummary, 'sale_count') > 0) ...<Widget>[
+            const SizedBox(height: 16),
+            Text(
+              'Arsip riwayat dari aplikasi trial',
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              'Data ini dipertahankan dari database lama dan ditampilkan '
+              'terpisah. Skema trial tidak memiliki rincian pajak, metode '
+              'pembayaran, biaya perolehan, atau jurnal lengkap; arsip ini '
+              'bukan laporan akuntansi terverifikasi dan tidak akan dihitung '
+              'ke dalam total transaksi aktif.',
+            ),
+            const SizedBox(height: 8),
+            _MetricCard(
+              label: 'Transaksi trial (arsip)',
+              value: _intValueFrom(_legacySummary, 'sale_count').toString(),
+              icon: Icons.history,
+            ),
+            _MetricCard(
+              label: 'Total trial (arsip)',
+              value: _money(_intValueFrom(_legacySummary, 'revenue')),
+              icon: Icons.archive_outlined,
+            ),
+            ..._legacyRecent.map((sale) {
+              final originalId =
+                  (sale['original_sale_id'] as num?)?.toInt() ?? 0;
+              final amount =
+                  (sale['total_amount'] as num?)?.toInt() ?? 0;
+              final itemCount =
+                  (sale['item_count'] as num?)?.toInt() ?? 0;
+              return Card(
+                child: ListTile(
+                  leading: const Icon(Icons.history),
+                  title: Text('TRIAL-$originalId'),
+                  subtitle: Text(
+                    (sale['created_at'] ?? '').toString() +
+                    ' · $itemCount item · ' +
+                    (sale['email'] ?? '').toString(),
+                  ),
+                  trailing: Text(_money(amount)),
+                ),
+              );
+            }),
+          ],
           const SizedBox(height: 16),
           Text(
             'Transaksi terbaru',
