@@ -39,7 +39,8 @@ The following changes have been made on `feat/unified-pos-local-first-app`:
 - **`pos-app/lib/features/home/reports_screen.dart`:** device-local sales/HPP reporting and a count of non-acknowledged outbox events. It explicitly warns that this is not consolidated multi-device reporting.
 - **`pos-app/pubspec.yaml`:** adds `url_launcher` for privacy, delete-account request, and support links.
 - **`pos-app/test/home/combined_home_shell_test.dart`:** adds a navigation smoke test using an in-memory SQLite database.
-- **`.github/workflows/pos-app-ci.yml`:** adds Dart analysis/tests plus a temporary Android host generation step and a debug-only AAB compile check; generated host files are confined to the disposable CI checkout.
+- **`pos-app/tool/prepare_android_host.sh`:** safely fills in missing Android host files without overwriting existing files or canonical app identity/configuration.
+- **`.github/workflows/pos-app-ci.yml`:** adds Dart analysis/tests plus host preparation via the shared script and a debug-only AAB compile check. Generated host files are confined to the disposable CI checkout.
 - **`pos-app/README.md`:** documents reachable screens, local-first boundaries, environment configuration, build/test commands, and the pending cloud sync API.
 
 The weaker email-only trial status check is intentionally not copied as authentication. An email address or activation status does not prove caller identity. A proper authenticated account/subscription API must be added under the approved SaaS architecture.
@@ -48,7 +49,7 @@ The weaker email-only trial status check is intentionally not copied as authenti
 
 - **SOURCE-VERIFIED:** Changed files were fetched from the feature branch after writing to confirm they exist.
 - **TEST-EXECUTED:** No Flutter test suite or Dart analyzer result is yet available from this environment.
-- **CI-OBSERVED:** GitHub Actions created runs for the new `Canonical POS App CI` workflow, including run IDs `38256345772` and `38256650643`, both with conclusion `startup_failure` and no workflow jobs returned. This is not a test result and does not establish whether source code compiles. Investigation / a new runnable CI attempt is required.
+- **CI-OBSERVED:** GitHub Actions created runs for `Canonical POS App CI`, including `38256345772`, `38256650643`, `38256908296`, and `38257276346`. They all concluded `startup_failure` before jobs started (the Jobs API returned an empty list). This is not a code test result and does not establish whether the source compiles. A runner/Actions startup problem remains a blocker; obtain a run that actually starts its job before claiming a validation result.
 - **NOT RUN:** `flutter pub get`, `flutter analyze`, `flutter test`, Android bundle build, physical-device installation, offline crash/retry tests, live Supabase authentication checks, tenant A/B adversarial tests, Laravel integration tests, and production deployment checks.
 - **PR:** Pull request #21 is a draft and is not merged.
 
