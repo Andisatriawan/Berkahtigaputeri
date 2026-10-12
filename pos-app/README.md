@@ -1,10 +1,31 @@
 # Berkah POS App
 
-Flutter client for Berkah POS, with point-of-sale checkout, inventory lot tracking, and accounting journal functionality.
+**Canonical Flutter client** for Berkah Tiga Puteri POS. The project combines the everyday trial POS screens with the modular local inventory, checkout, accounting, and Supabase configuration layers under `pos-app/`.
+
+## Current screens
+
+- **Beranda:** local summary for products, sales totals, and pending outbox entries.
+- **Produk:** local product catalogue, create/edit, and guarded deletion when inventory or transaction history exists.
+- **Kasir:** cart, payment-method selection, Rupiah totals and PPN, backed by the existing atomic `PaymentService` / `SqliteSaleRepository`.
+- **Stok:** inventory receipt with lot, unit cost, optional expiry, and required batch/expiry when the product tracks expiry.
+- **Laporan:** device-local sales, HPP and non-acknowledged outbox count.
+- **Pengaturan:** local tenant/device identity display, opt-in Supabase configuration check, privacy policy, account deletion request link, and sales WhatsApp link.
+
+## Architecture and truth-in-status rules
+
+- SQLite is the local persistence layer, using the canonical `PosDatabase` migrations in `lib/core/database/pos_database.dart`.
+- Checkout persists sales, sale lines, FEFO lot allocations, FIFO cost consumption, balanced accounting journal lines, stock movements, and the existing outbox event in a SQLite transaction.
+- Prices and totals use integer Rupiah in the modular domain logic.
+- The app has a local-first UI. **The Laravel API, authenticated cloud sales synchronization/acknowledgement, and consolidated multi-device reports are not implemented by this UI integration.** The dashboard and reports tell users that outbox events remain local/pending.
+- Supabase configuration is enabled only by build-time `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY` values. Omitting them leaves local POS available without silently defaulting to the documented staging project. Supplying a publishable key does not authenticate a user or enroll a device; protected configuration access remains subject to existing session/RLS requirements.
+- `BERKAH_WHATSAPP_NUMBER` optionally configures the sales WhatsApp phone number at build time. No private service-role, database-admin, or signing secrets belong in the Flutter app.
+- This app must not be treated as production multi-tenant SaaS until authenticated identity, server-side tenant authorization, the sync API, adversarial two-tenant tests, backups/restore, and production security gates are verified.
+
+The trial app's email-only status lookup is intentionally not used as authentication: knowing an email or reading an activation status does not prove the caller owns that account. Use the approved authenticated account/subscription API when that backend flow is implemented.
 
 ## Local checks
 
-Run these commands from this directory:
+Run from this directory:
 
 ```sh
 flutter pub get
@@ -12,15 +33,18 @@ flutter analyze
 flutter test
 ```
 
-## Android release artifact
+## Android compile check
 
-On pushes to `main` that change `pos-app/**`, the `02 · UAT Infinix Release APK` workflow runs secret scanning, static analysis, tests, and a release App Bundle build.
+The tracked Android host is intentionally partial. The GitHub Actions workflow `.github/workflows/pos-app-ci.yml` generates the missing Android scaffold only in its disposable CI checkout, preserves the committed canonical app Gradle configuration, then runs a **debug-only** Android App Bundle build. That artifact is for compile verification only; it is not a production-signed release and must not be submitted to Play Console.
 
-The artifact is published as `berkahtigaputeri-pos-release-aab`. Because this repository currently contains only a partial Android host directory, the workflow generates the missing Android scaffold in its temporary checkout when needed.
+Production release signing and device/internal-track verification must be configured and validated separately. Never commit keystores, key.properties, or signing secrets.
 
-The CI scaffold step constrains Gradle to the Java 17 JDK selected by `actions/setup-java`, caps the heap at 2 GiB, and limits parallel workers to reduce memory pressure on the self-hosted Fedora runner.
-# auto-start test 1791672616
+## Permanent architecture rules
 
-## Workflow trigger scope
+Before coding, follow root `AGENTS.md` and read:
 
-Pushes that modify only `pos-app/**` are routed to this workflow. The Pages workflow is scoped to `btp-admin/**`, while Final Pos Sync is scoped to `supabase/**`, `config/**`, and `scripts/sync_excel_to_supabase.py`. Changes to each workflow definition intentionally trigger its owning workflow.
+1. `docs/permanent/DOC_00_CANONICAL_ARCHITECTURE_DECISION.md`
+2. `docs/permanent/DOC_00_MASTER_ROADMAP.md`
+3. `docs/permanent/DOC_12_SAAS_DATABASE_OFFLINE_ARCHITECTURE_AND_AGENT_PROTOCOL.md`
+
+The canonical configuration inheritance remains `GLOBAL → TEMPLATE → TENANT → SERVICE → DEVICE`. All agents must provide evidence reports as defined in DOC_12.
