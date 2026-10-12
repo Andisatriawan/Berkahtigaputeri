@@ -285,6 +285,14 @@ class _ProductEditorState extends State<_ProductEditor> {
     return null;
   }
 
+  String? _positiveInt(String? value, String label) {
+    final parsed = int.tryParse(value?.trim() ?? '');
+    if (parsed == null || parsed <= 0) {
+      return '$label harus lebih dari 0.';
+    }
+    return null;
+  }
+
   void _submit() {
     if (!(_formKey.currentState?.validate() ?? false)) return;
     final existing = widget.existing;
@@ -343,7 +351,7 @@ class _ProductEditorState extends State<_ProductEditor> {
                     labelText: 'Harga jual (Rupiah)',
                   ),
                   keyboardType: TextInputType.number,
-                  validator: (value) => _nonNegativeInt(value, 'Harga'),
+                  validator: (value) => _positiveInt(value, 'Harga'),
                 ),
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,
