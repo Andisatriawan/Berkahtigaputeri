@@ -408,14 +408,16 @@ class SqliteProductRepository {
         SELECT
           (SELECT COUNT(*) FROM sale_items WHERE product_id = ?) AS sale_count,
           (SELECT COUNT(*) FROM inventory_lots WHERE product_id = ?) AS lot_count,
-          (SELECT COUNT(*) FROM stock_movements WHERE product_id = ?) AS movement_count
+          (SELECT COUNT(*) FROM stock_movements WHERE product_id = ?) AS movement_count,
+          (SELECT COUNT(*) FROM legacy_sale_items_archive WHERE product_id = ?) AS legacy_item_count
         ''',
-        <Object?>[normalizedId, normalizedId, normalizedId],
+        <Object?>[normalizedId, normalizedId, normalizedId, normalizedId],
       );
       final row = references.single;
       final used = (row['sale_count']! as int) > 0 ||
           (row['lot_count']! as int) > 0 ||
-          (row['movement_count']! as int) > 0;
+          (row['movement_count']! as int) > 0 ||
+          (row['legacy_item_count']! as int) > 0;
       if (used) {
         throw const ProductValidationException(
           'Produk memiliki riwayat transaksi atau persediaan. Nonaktifkan '
