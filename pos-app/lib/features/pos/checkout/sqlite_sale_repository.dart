@@ -85,6 +85,9 @@ class SqliteSaleRepository implements SaleRepository {
         }
 
         final product = _productFromRow(rows.first);
+        if (product.requiresReview) {
+          throw ProductRequiresReviewException(product.nameId);
+        }
         products.add(product);
         pricingLines.add(
           SalePricingLine(
