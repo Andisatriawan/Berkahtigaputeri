@@ -189,6 +189,9 @@ class _ProductScreenState extends State<ProductScreen> {
                           final expiry = product.trackExpiry
                               ? ' · Pantau kedaluwarsa'
                               : '';
+                          final review = product.requiresReview
+                              ? ' · PERLU TINJAU PPN'
+                              : '';
                           return Card(
                             child: ListTile(
                               leading: CircleAvatar(
