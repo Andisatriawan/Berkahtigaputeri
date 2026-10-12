@@ -802,6 +802,7 @@ class SqliteSaleRepository implements SaleRepository {
       stockQty: row['stock_qty']! as int,
       trackExpiry: (row['track_expiry']! as int) == 1,
       minShelfLifeDays: row['min_shelf_life_days']! as int,
+      requiresReview: (row['requires_review']! as int) == 1,
     );
   }
 
