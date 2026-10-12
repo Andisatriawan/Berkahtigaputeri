@@ -1,0 +1,135 @@
+import 'dart:io';
+
+import 'package:berkahtigaputeri_pos/core/database/legacy_trial_importer.dart';
+import 'package:berkahtigaputeri_pos/core/database/pos_database.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:path/path.dart' as p;
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+
+void main() {
+  test('imports old trial products safely and archives incomplete sales once',
+      () async {
+    sqfliteFfiInit();
+    final directory =
+        await Directory.systemTemp.createTemp('berkah-trial-import-');
+    addTearDown(() => directory.delete(recursive: true));
+
+    final legacyPath = p.join(directory.path, 'berkah_pos.db');
+    final oldDb = await databaseFactoryFfi.openDatabase(
+      legacyPath,
+      options: OpenDatabaseOptions(
+        version: 1,
+        onCreate: (db, version) async {
+          await db.execute('''
+            CREATE TABLE products (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              name TEXT NOT NULL,
+              sku TEXT NOT NULL,
+              price REAL NOT NULL,
+              stock INTEGER NOT NULL
+            )
+          ''');
+          await db.execute('''
+            CREATE TABLE sales (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              total REAL NOT NULL,
+              item_count INTEGER NOT NULL,
+              email TEXT NOT NULL,
+              created TEXT NOT NULL
+            )
+          ''');
+          await db.execute('''
+            CREATE TABLE sale_items (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              sale_id INTEGER NOT NULL,
+              product_id INTEGER NOT NULL,
+              name TEXT NOT NULL,
+              qty INTEGER NOT NULL,
+              price REAL NOT NULL,
+              subtotal REAL NOT NULL
+            )
+          ''');
+        },
+      ),
+    );
+
+    final productId = await oldDb.insert('products', <String, Object?>{
+      'name': 'Kopi Lama',
+      'sku': 'KOPI-01',
+      'price': 25000.0,
+      'stock': 5,
+    });
+    final saleId = await oldDb.insert('sales', <String, Object?>{
+      'total': 50000.0,
+      'item_count': 2,
+      'email': 'cashier@example.test',
+      'created': '2026-10-01T08:30:00.000Z',
+    });
+    await oldDb.insert('sale_items', <String, Object?>{
+      'sale_id': saleId,
+      'product_id': productId,
+      'name': 'Kopi Lama',
+      'qty': 2,
+      'price': 25000.0,
+      'subtotal': 50000.0,
+    });
+    await oldDb.close();
+
+    final target = await PosDatabase.openAt(
+      p.join(directory.path, 'berkahtigaputeri_pos.db'),
+      factory: databaseFactoryFfi,
+    );
+    addTearDown(target.close);
+
+    final result = await LegacyTrialImporter.importIfPresent(
+      target: target.database,
+      legacyPath: legacyPath,
+      factory: databaseFactoryFfi,
+    );
+
+    expect(result, <String, int>{
+      'products': 1,
+      'sales': 1,
+      'saleItems': 1,
+    });
+
+    final product = (await target.database.query('products')).single;
+    expect(product['id'], 'legacy-product-1');
+    expect(product['sku'], 'KOPI-01');
+    expect(product['price'], 25000);
+    expect(product['stock_qty'], 0);
+    expect(product['requires_review'], 1);
+
+    final archivedStock =
+        (await target.database.query('legacy_product_stock_archive')).single;
+    expect(archivedStock['original_quantity'], 5);
+    expect(archivedStock['status'], 'needs_review');
+
+    final archivedSale =
+        (await target.database.query('legacy_sales_archive')).single;
+    expect(archivedSale['total_amount'], 50000);
+    expect(archivedSale['item_count'], 2);
+    expect(archivedSale['email'], 'cashier@example.test');
+
+    final archivedItem =
+        (await target.database.query('legacy_sale_items_archive')).single;
+    expect(archivedItem['product_id'], 'legacy-product-1');
+    expect(archivedItem['quantity'], 2);
+    expect(archivedItem['subtotal'], 50000);
+
+    // Legacy financial rows must not masquerade as complete new sales/journals.
+    expect(await target.database.query('sales'), isEmpty);
+    expect(await target.database.query('journals'), isEmpty);
+
+    // The original file is deliberately retained and the import is idempotent.
+    expect(await File(legacyPath).exists(), isTrue);
+    final rerun = await LegacyTrialImporter.importIfPresent(
+      target: target.database,
+      legacyPath: legacyPath,
+      factory: databaseFactoryFfi,
+    );
+    expect(rerun?['alreadyImported'], 1);
+    expect(await target.database.query('legacy_sales_archive'), hasLength(1));
+    expect(await target.database.query('products'), hasLength(1));
+  });
+}
