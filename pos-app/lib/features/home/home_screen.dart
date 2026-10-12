@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/config/app_identity_store.dart';
 import '../../core/config/config_service.dart';
@@ -10,6 +11,13 @@ import '../pos/checkout_screen.dart';
 import '../products/product_screen.dart';
 import '../products/repositories/sqlite_product_repository.dart';
 import 'reports_screen.dart';
+
+const String _salesWhatsAppNumber = String.fromEnvironment(
+  'BERKAH_WHATSAPP_NUMBER',
+  defaultValue: '',
+);
+const String _privacyUrl = 'https://berkahtigaputeri.co.id/privacy';
+const String _deleteAccountUrl = 'https://berkahtigaputeri.co.id/delete-account';
 
 /// Canonical combined app shell. The trial app's everyday POS flows use the
 /// stronger local inventory/accounting services from pos-app.
@@ -385,6 +393,37 @@ class _ConfigurationScreenState extends State<_ConfigurationScreen> {
   Map<String, dynamic>? _configuration;
   TenantFeatures? _features;
 
+  Future<void> _openExternal(String url) async {
+    try {
+      final opened = await launchUrl(
+        Uri.parse(url),
+        mode: LaunchMode.externalApplication,
+      );
+      if (!opened && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Tautan tidak dapat dibuka.')),
+        );
+      }
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Tautan tidak dapat dibuka.')),
+      );
+    }
+  }
+
+  Future<void> _contactSales() async {
+    final phone = _salesWhatsAppNumber.replaceAll(RegExp('[^0-9]'), '');
+    final link = phone.isEmpty
+        ? Uri.https('wa.me', '/', <String, String>{
+            'text': 'Halo tim Berkah POS, saya ingin informasi aktivasi.',
+          })
+        : Uri.https('wa.me', '/$phone', <String, String>{
+            'text': 'Halo tim Berkah POS, saya ingin informasi aktivasi.',
+          });
+    await _openExternal(link.toString());
+  }
+
   Future<void> _checkConfiguration() async {
     final service = widget.configService;
     if (service == null) {
@@ -502,6 +541,43 @@ class _ConfigurationScreenState extends State<_ConfigurationScreen> {
                   ],
                 ],
               ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Card(
+            child: Column(
+              children: <Widget>[
+                ListTile(
+                  leading: const Icon(Icons.privacy_tip_outlined),
+                  title: const Text('Kebijakan Privasi'),
+                  subtitle: const Text('Buka kebijakan privasi Berkah POS'),
+                  trailing: const Icon(Icons.open_in_new),
+                  onTap: () => _openExternal(_privacyUrl),
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  leading: const Icon(Icons.person_remove_outlined),
+                  title: const Text('Permintaan Hapus Akun'),
+                  subtitle: const Text(
+                    'Ajukan permintaan melalui halaman resmi; verifikasi '
+                    'pemilik akun dilakukan oleh layanan tersebut.',
+                  ),
+                  trailing: const Icon(Icons.open_in_new),
+                  onTap: () => _openExternal(_deleteAccountUrl),
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  leading: const Icon(Icons.support_agent_outlined),
+                  title: const Text('Hubungi Sales via WhatsApp'),
+                  subtitle: Text(
+                    _salesWhatsAppNumber.trim().isEmpty
+                        ? 'Nomor sales dapat dikonfigurasi saat build.'
+                        : 'Minta informasi aktivasi atau paket berlangganan.',
+                  ),
+                  trailing: const Icon(Icons.open_in_new),
+                  onTap: _contactSales,
+                ),
+              ],
             ),
           ),
         ],
