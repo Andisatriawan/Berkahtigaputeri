@@ -9,7 +9,7 @@ import 'package:sqflite/sqflite.dart';
 class PosDatabase {
   PosDatabase._(this.database);
 
-  static const int schemaVersion = 2;
+  static const int schemaVersion = 3;
   static const String fileName = 'berkahtigaputeri_pos.db';
 
   final Database database;
@@ -60,12 +60,14 @@ class PosDatabase {
         ppn_exempt INTEGER NOT NULL CHECK(ppn_exempt IN (0, 1)),
         stock_qty INTEGER NOT NULL CHECK(stock_qty >= 0),
         track_expiry INTEGER NOT NULL DEFAULT 0 CHECK(track_expiry IN (0, 1)),
-        min_shelf_life_days INTEGER NOT NULL DEFAULT 0 CHECK(min_shelf_life_days >= 0)
+        min_shelf_life_days INTEGER NOT NULL DEFAULT 0 CHECK(min_shelf_life_days >= 0),
+        requires_review INTEGER NOT NULL DEFAULT 0 CHECK(requires_review IN (0, 1))
       )
     ''');
 
     await _createInventorySchema(database);
     await _createSalesAndAccountingSchema(database);
+    await _createLegacyArchiveTables(database);
   }
 
   static Future<void> _upgradeSchema(
@@ -78,6 +80,16 @@ class PosDatabase {
     if (current < 2) {
       await _migrateV1ToV2(database);
       current = 2;
+    }
+
+    if (current < 3) {
+      await database.execute('''
+        ALTER TABLE products
+        ADD COLUMN requires_review INTEGER NOT NULL DEFAULT 0
+        CHECK(requires_review IN (0, 1))
+      ''');
+      await _createLegacyArchiveTables(database);
+      current = 3;
     }
 
     if (current != newVersion) {
@@ -441,6 +453,71 @@ class PosDatabase {
     await database.execute('''
       CREATE INDEX idx_outbox_status
       ON outbox_events(status, created_at_utc)
+    ''');
+  }
+
+  /// Archive area for legacy trial history. These records are intentionally
+  /// not treated as complete accounting journals because the trial schema did
+  /// not store tax, payment-method, or acquisition-cost details.
+  static Future<void> _createLegacyArchiveTables(Database database) async {
+    await database.execute('''
+      CREATE TABLE legacy_import_runs (
+        migration_key TEXT PRIMARY KEY,
+        source_file TEXT NOT NULL,
+        completed_at_utc TEXT NOT NULL,
+        imported_products INTEGER NOT NULL,
+        archived_sales INTEGER NOT NULL,
+        archived_sale_items INTEGER NOT NULL
+      )
+    ''');
+
+    await database.execute('''
+      CREATE TABLE legacy_product_stock_archive (
+        product_id TEXT PRIMARY KEY,
+        original_product_id INTEGER NOT NULL UNIQUE,
+        original_quantity INTEGER NOT NULL CHECK(original_quantity >= 0),
+        status TEXT NOT NULL CHECK(status IN ('needs_review', 'reviewed', 'no_opening_stock')),
+        imported_at_utc TEXT NOT NULL,
+        reviewed_at_utc TEXT,
+        FOREIGN KEY(product_id) REFERENCES products(id)
+      )
+    ''');
+
+    await database.execute('''
+      CREATE TABLE legacy_sales_archive (
+        id TEXT PRIMARY KEY,
+        original_sale_id INTEGER NOT NULL UNIQUE,
+        total_amount INTEGER NOT NULL CHECK(total_amount >= 0),
+        item_count INTEGER NOT NULL CHECK(item_count >= 0),
+        email TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      )
+    ''');
+
+    await database.execute('''
+      CREATE TABLE legacy_sale_items_archive (
+        id TEXT PRIMARY KEY,
+        original_item_id INTEGER NOT NULL UNIQUE,
+        original_sale_id INTEGER NOT NULL,
+        product_id TEXT,
+        product_name TEXT NOT NULL,
+        quantity INTEGER NOT NULL CHECK(quantity > 0),
+        unit_price INTEGER NOT NULL CHECK(unit_price >= 0),
+        subtotal INTEGER NOT NULL CHECK(subtotal >= 0),
+        FOREIGN KEY(original_sale_id)
+          REFERENCES legacy_sales_archive(original_sale_id),
+        FOREIGN KEY(product_id) REFERENCES products(id)
+      )
+    ''');
+
+    await database.execute('''
+      CREATE INDEX idx_legacy_sales_archive_created
+      ON legacy_sales_archive(created_at DESC, original_sale_id DESC)
+    ''');
+
+    await database.execute('''
+      CREATE INDEX idx_legacy_stock_review
+      ON legacy_product_stock_archive(status, product_id)
     ''');
   }
 }
