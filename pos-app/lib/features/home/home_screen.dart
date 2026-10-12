@@ -41,6 +41,7 @@ class _HomeScreenState extends State<HomeScreen> {
   late final SqliteProductRepository _products;
   late final PaymentService _payments;
   int _selectedIndex = 0;
+  int _refreshCounter = 0;
 
   static const _titles = <String>[
     'Beranda', 'Produk', 'Kasir', 'Stok', 'Laporan',
@@ -55,10 +56,15 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  void _refreshLocalViews() {
+    setState(() => _refreshCounter++);
+  }
+
   @override
   Widget build(BuildContext context) {
     final pages = <Widget>[
       _DashboardScreen(
+        key: ValueKey<String>('dashboard-$_refreshCounter'),
         database: widget.database,
         onOpenProducts: () => setState(() => _selectedIndex = 1),
         onOpenCheckout: () => setState(() => _selectedIndex = 2),
@@ -67,18 +73,21 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       ProductScreen(
         repository: _products,
-        onChanged: () => setState(() {}),
+        onChanged: _refreshLocalViews,
       ),
       CheckoutScreen(
         productsRepository: _products,
         paymentService: _payments,
-        onSaleSaved: () => setState(() {}),
+        onSaleSaved: _refreshLocalViews,
       ),
       InventoryScreen(
         repository: _products,
         onChanged: () => setState(() {}),
       ),
-      ReportsScreen(database: widget.database),
+      ReportsScreen(
+        key: ValueKey<String>('reports-$_refreshCounter'),
+        database: widget.database,
+      ),
     ];
 
     return Scaffold(
