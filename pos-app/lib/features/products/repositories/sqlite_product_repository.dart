@@ -18,8 +18,8 @@ class SqliteProductRepository {
       '''
       INSERT INTO products(
         id, sku, barcode, name_id, price, ppn_exempt, stock_qty,
-        track_expiry, min_shelf_life_days
-      ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)
+        track_expiry, min_shelf_life_days, requires_review
+      ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         sku = excluded.sku,
         barcode = excluded.barcode,
@@ -28,7 +28,8 @@ class SqliteProductRepository {
         ppn_exempt = excluded.ppn_exempt,
         stock_qty = excluded.stock_qty,
         track_expiry = excluded.track_expiry,
-        min_shelf_life_days = excluded.min_shelf_life_days
+        min_shelf_life_days = excluded.min_shelf_life_days,
+        requires_review = excluded.requires_review
       ''',
       <Object?>[
         product.id,
@@ -40,6 +41,7 @@ class SqliteProductRepository {
         product.stockQty,
         product.trackExpiry ? 1 : 0,
         product.minShelfLifeDays,
+        product.requiresReview ? 1 : 0,
       ],
     );
   }
@@ -381,6 +383,7 @@ class SqliteProductRepository {
       stockQty: row['stock_qty']! as int,
       trackExpiry: (row['track_expiry']! as int) == 1,
       minShelfLifeDays: row['min_shelf_life_days']! as int,
+      requiresReview: (row['requires_review']! as int) == 1,
     );
   }
 
