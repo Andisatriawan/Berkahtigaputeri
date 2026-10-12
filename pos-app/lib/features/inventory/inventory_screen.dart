@@ -48,11 +48,17 @@ class _InventoryScreenState extends State<InventoryScreen> {
     try {
       final products = await widget.repository.listAll();
       if (!mounted) return;
+      Product? selected;
+      for (final product in products) {
+        if (product.id == _selected?.id) {
+          selected = product;
+          break;
+        }
+      }
+      selected ??= products.isEmpty ? null : products.first;
       setState(() {
         _products = products;
-        _selected = _selected == null
-            ? (products.isEmpty ? null : products.first)
-            : products.where((product) => product.id == _selected!.id).firstOrNull;
+        _selected = selected;
         _loading = false;
         _error = null;
       });
