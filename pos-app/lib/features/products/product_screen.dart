@@ -53,9 +53,29 @@ class _ProductScreenState extends State<ProductScreen> {
   }
 
   Future<void> _edit([Product? existing]) async {
+    var expirySettingsEditable = true;
+    if (existing != null) {
+      try {
+        expirySettingsEditable =
+            !(await widget.repository.hasInventoryLots(existing.id));
+      } catch (error) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Riwayat lot produk tidak dapat diverifikasi: $error'),
+          ),
+        );
+        return;
+      }
+    }
+    if (!mounted) return;
+
     final product = await showDialog<Product>(
       context: context,
-      builder: (context) => _ProductEditor(existing: existing),
+      builder: (context) => _ProductEditor(
+        existing: existing,
+        expirySettingsEditable: expirySettingsEditable,
+      ),
     );
     if (product == null) return;
 
@@ -207,9 +227,13 @@ class _ProductScreenState extends State<ProductScreen> {
 }
 
 class _ProductEditor extends StatefulWidget {
-  const _ProductEditor({this.existing});
+  const _ProductEditor({
+    this.existing,
+    required this.expirySettingsEditable,
+  });
 
   final Product? existing;
+  final bool expirySettingsEditable;
 
   @override
   State<_ProductEditor> createState() => _ProductEditorState();
@@ -330,10 +354,17 @@ class _ProductEditorState extends State<_ProductEditor> {
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,
                   value: _trackExpiry,
-                  onChanged: (value) => setState(() => _trackExpiry = value),
+                  onChanged: widget.expirySettingsEditable
+                      ? (value) => setState(() => _trackExpiry = value)
+                      : null,
                   title: const Text('Lacak tanggal kedaluwarsa'),
+                  subtitle: widget.expirySettingsEditable
+                      ? null
+                      : const Text(
+                          'Tidak dapat diubah setelah lot persediaan dibuat.',
+                        ),
                 ),
-                if (_trackExpiry)
+                if (_trackExpiry && widget.expirySettingsEditable)
                   TextFormField(
                     controller: _minimumShelfLife,
                     decoration: const InputDecoration(
@@ -342,6 +373,14 @@ class _ProductEditorState extends State<_ProductEditor> {
                     keyboardType: TextInputType.number,
                     validator: (value) =>
                         _nonNegativeInt(value, 'Sisa masa simpan'),
+                  )
+                else if (_trackExpiry)
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Minimal sisa masa simpan'),
+                    subtitle: Text(
+                      _minimumShelfLife.text + ' hari (tetap untuk lot yang ada)',
+                    ),
                   ),
                 if (widget.existing == null)
                   const Padding(
