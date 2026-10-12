@@ -14,6 +14,29 @@ class SqliteProductRepository {
   Future<void> upsert(Product product) async {
     _validate(product);
 
+    final existingRows = await _database.database.query(
+      'products',
+      where: 'id = ?',
+      whereArgs: <Object?>[product.id],
+      limit: 1,
+    );
+    if (existingRows.isEmpty && product.stockQty != 0) {
+      throw const ProductValidationException(
+        'Produk baru harus dibuat dengan stok nol. Catat stok awal melalui '
+        'penerimaan persediaan agar lot dan biaya HPP tercatat.',
+      );
+    }
+    if (existingRows.isNotEmpty) {
+      final current = _fromRow(existingRows.single);
+      if (current.trackExpiry != product.trackExpiry &&
+          await hasInventoryLots(product.id)) {
+        throw const ProductValidationException(
+          'Pelacakan kedaluwarsa tidak dapat diubah setelah lot persediaan '
+          'tercatat. Selesaikan stok lama terlebih dahulu.',
+        );
+      }
+    }
+
     await _database.database.rawInsert(
       '''
       INSERT INTO products(
@@ -26,7 +49,6 @@ class SqliteProductRepository {
         name_id = excluded.name_id,
         price = excluded.price,
         ppn_exempt = excluded.ppn_exempt,
-        stock_qty = excluded.stock_qty,
         track_expiry = excluded.track_expiry,
         min_shelf_life_days = excluded.min_shelf_life_days,
         requires_review = excluded.requires_review
