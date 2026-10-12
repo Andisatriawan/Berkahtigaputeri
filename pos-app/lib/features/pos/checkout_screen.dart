@@ -80,7 +80,13 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       );
     }
     if (lines.isEmpty) return null;
-    return SaleCalculator.calculate(lines: lines);
+    try {
+      return SaleCalculator.calculate(lines: lines);
+    } on SaleCalculationException {
+      // A malformed/zero-value catalogue item must not crash widget build.
+      // Invalid totals keep checkout disabled until the product is corrected.
+      return null;
+    }
   }
 
   void _changeQuantity(Product product, int delta) {
@@ -253,6 +259,14 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                 ),
                               );
                             }),
+                            if (_cart.isNotEmpty && calculation == null)
+                              const Padding(
+                                padding: EdgeInsets.only(bottom: 8),
+                                child: Text(
+                                  'Total tidak valid. Periksa harga produk pada katalog.',
+                                  style: TextStyle(color: Colors.red),
+                                ),
+                              ),
                             const Divider(),
                             DropdownButtonFormField<PaymentMethod>(
                               value: _method,
@@ -294,7 +308,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                             SizedBox(
                               width: double.infinity,
                               child: FilledButton.icon(
-                                onPressed: _cart.isEmpty || _processing
+                                onPressed: _cart.isEmpty ||
+                                        _processing ||
+                                        calculation == null
                                     ? null
                                     : _checkout,
                                 icon: _processing
