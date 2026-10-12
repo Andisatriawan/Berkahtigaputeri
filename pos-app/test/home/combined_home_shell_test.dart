@@ -35,7 +35,7 @@ void main() {
     await tester.tap(find.text('Kasir'));
     await tester.pumpAndSettle();
     expect(find.text('Katalog produk'), findsOneWidget);
-    expect(find.text('Selesaikan checkout'), findsNothing);
+    expect(find.text('Selesaikan checkout'), findsOneWidget);
 
     await tester.tap(find.text('Stok'));
     await tester.pumpAndSettle();
