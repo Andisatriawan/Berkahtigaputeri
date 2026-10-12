@@ -14,6 +14,8 @@ The modular `pos-app/` is the canonical integration target because it already ha
 
 Everyday product/cashier/inventory/report screens are being brought into `pos-app/`, calling its existing repositories and services rather than adding the trial app's second, simpler `products/sales/sale_items` database schema.
 
+**Migration boundary — important:** the existing trial APK is not an in-place update of this app. The trial package ID is `id.co.berkahtigaputeri.berkahpos` and its SQLite file is `berkah_pos.db`; the canonical modular app package ID is `com.berkahtigaputeri.pos` and its database is `berkahtigaputeri_pos.db`. This PR preserves the canonical modular app's package/signing identity. It does not migrate already-installed trial-app local data. Any future importer needs an explicit, tested mapping that preserves audit lineage and must not invent missing historical tax, discount, costing, or journal values.
+
 ## 2. Source evidence on the base revision
 
 - **SOURCE-VERIFIED:** `pos-app/lib/core/database/pos_database.dart` defines local SQLite tables for products, inventory lots, reservations, cost layers, inventory movements, sales, sale items, journals, journal lines, stock movements, and outbox events.
@@ -51,7 +53,7 @@ The weaker email-only trial status check is intentionally not copied as authenti
 
 - **SOURCE-VERIFIED:** Changed files were fetched from the feature branch after writing to confirm they exist.
 - **TEST-EXECUTED:** No Flutter test suite or Dart analyzer result is yet available from this environment.
-- **CI-OBSERVED:** GitHub Actions created runs for `Canonical POS App CI`, including `38256345772`, `38256650643`, `38256908296`, `38257276346`, and `38257716462`. They all concluded `startup_failure` before jobs started (the Jobs API returned an empty list). This is not a code test result and does not establish whether the source compiles. A runner/Actions startup problem remains a blocker; obtain a run that actually starts its job before claiming a validation result.
+- **CI-OBSERVED:** GitHub Actions created runs for `Canonical POS App CI`, including `38256345772`, `38256650643`, `38256908296`, `38257276346`, `38257716462`, and `38257779580`. They all concluded `startup_failure` before jobs started (the Jobs API returned an empty list). This is not a code test result and does not establish whether the source compiles. A runner/Actions startup problem remains a blocker; obtain a run that actually starts its job before claiming a validation result.
 - **NOT RUN:** `flutter pub get`, `flutter analyze`, `flutter test`, Android bundle build, physical-device installation, offline crash/retry tests, live Supabase authentication checks, tenant A/B adversarial tests, Laravel integration tests, and production deployment checks.
 - **PR:** Pull request #21 is a draft and is not merged.
 
