@@ -22,8 +22,8 @@ fi
 
 flutter create \
   --platforms=android \
-  --project-name pos \
-  --org com.berkahtigaputeri \
+  --project-name berkahpos \
+  --org id.co.berkahtigaputeri \
   --overwrite \
   "$temp_dir/seed"
 
@@ -43,10 +43,10 @@ org.gradle.parallel=false
 EOF
 fi
 
-grep -q 'applicationId = "com.berkahtigaputeri.pos"' "$android_dir/app/build.gradle"
-grep -q 'namespace = "com.berkahtigaputeri.pos"' "$android_dir/app/build.gradle"
-test -s "$android_dir/app/src/main/kotlin/com/berkahtigaputeri/pos/MainActivity.kt"
+grep -q 'applicationId = "id.co.berkahtigaputeri.berkahpos"' "$android_dir/app/build.gradle"
+grep -q 'namespace = "id.co.berkahtigaputeri.berkahpos"' "$android_dir/app/build.gradle"
+test -s "$android_dir/app/src/main/kotlin/id/co/berkahtigaputeri/berkahpos/MainActivity.kt"
 test -s "$android_dir/gradlew"
 test -s "$android_dir/gradle/wrapper/gradle-wrapper.jar"
 
-echo "Android host is present. Existing app Gradle config and app identity were preserved."
+echo "Android host is present for id.co.berkahtigaputeri.berkahpos. Existing app Gradle config and app identity were preserved."
