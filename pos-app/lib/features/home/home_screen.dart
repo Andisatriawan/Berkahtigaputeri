@@ -27,11 +27,13 @@ class HomeScreen extends StatefulWidget {
     required this.database,
     required this.identityStore,
     this.configService,
+    this.onSignOut,
   });
 
   final PosDatabase database;
   final AppIdentityStore identityStore;
   final ConfigService? configService;
+  final Future<void> Function()? onSignOut;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -112,6 +114,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 builder: (_) => _ConfigurationScreen(
                   configService: widget.configService,
                   identityStore: widget.identityStore,
+                  onSignOut: widget.onSignOut,
                 ),
               ),
             ),
@@ -419,10 +422,12 @@ class _ConfigurationScreen extends StatefulWidget {
   const _ConfigurationScreen({
     required this.configService,
     required this.identityStore,
+    this.onSignOut,
   });
 
   final ConfigService? configService;
   final AppIdentityStore identityStore;
+  final Future<void> Function()? onSignOut;
 
   @override
   State<_ConfigurationScreen> createState() => _ConfigurationScreenState();
@@ -645,6 +650,20 @@ class _ConfigurationScreenState extends State<_ConfigurationScreen> {
               ],
             ),
           ),
+          if (widget.onSignOut != null) ...<Widget>[
+            const SizedBox(height: 12),
+            Card(
+              child: ListTile(
+                leading: const Icon(Icons.logout),
+                title: const Text('Keluar dari akun cloud'),
+                subtitle: const Text(
+                  'Akhiri sesi akun ini pada perangkat. Data lokal tetap '
+                  'tersimpan pada perangkat.',
+                ),
+                onTap: () async => widget.onSignOut!(),
+              ),
+            ),
+          ],
         ],
       ),
     );
