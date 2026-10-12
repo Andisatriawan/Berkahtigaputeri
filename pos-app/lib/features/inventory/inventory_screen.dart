@@ -161,9 +161,9 @@ class _InventoryScreenState extends State<InventoryScreen> {
       builder: (context) => AlertDialog(
         title: const Text('Rekonsiliasi stok trial'),
         content: Text(
-          'Produk: $name\\n'
-          'Kuantitas dari data lama: $originalQuantity\\n'
-          'Stok aktif di aplikasi baru: $currentQuantity\\n\\n'
+          'Produk: $name\n'
+          'Kuantitas dari data lama: $originalQuantity\n'
+          'Stok aktif di aplikasi baru: $currentQuantity\n\n'
           'Pastikan stok fisik sudah dihitung dan stok pembukaan yang benar '
           'sudah dicatat melalui penerimaan stok, dengan harga pokok dan '
           'lot/expiry yang benar. Jika stok fisik memang nol, pastikan itu '
