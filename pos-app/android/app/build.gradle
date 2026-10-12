@@ -1,5 +1,11 @@
 import java.util.Properties
 
+plugins {
+    id "com.android.application"
+    id "org.jetbrains.kotlin.android"
+    id "dev.flutter.flutter-gradle-plugin"
+}
+
 // Match the existing trial app's fail-closed signing behavior. Private signing
 // files are injected locally/through Actions secrets and never committed.
 def keystoreProperties = new Properties()
@@ -14,12 +20,6 @@ def hasReleaseSigning = keystorePropertiesFile.exists() &&
     keystoreProperties.getProperty("keyPassword")
 def allowDebugReleaseSigning =
     project.findProperty("allowDebugReleaseSigning") == "true"
-
-plugins {
-    id "com.android.application"
-    id "org.jetbrains.kotlin.android"
-    id "dev.flutter.flutter-gradle-plugin"
-}
 
 android {
     namespace = "id.co.berkahtigaputeri.berkahpos"
