@@ -11,6 +11,11 @@ import 'legacy_trial_importer.dart';
 class PosDatabase {
   PosDatabase._(this.database);
 
+  String? _legacyTrialPath;
+  String? _legacyImportError;
+
+  String? get legacyImportError => _legacyImportError;
+
   static const int schemaVersion = 3;
   static const String fileName = 'berkahtigaputeri_pos.db';
 
@@ -25,20 +30,15 @@ class PosDatabase {
       p.join(root, fileName),
       factory: selectedFactory,
     );
+    target._legacyTrialPath = p.join(root, 'berkah_pos.db');
+    // Keep the POS shell available if legacy import needs attention, but
+    // expose an explicit warning. The old file is never deleted or modified.
     try {
-      // The old app used berkah_pos.db. Import it once into the new modular
-      // schema, preserving the original file and archiving sales whose old
-      // schema lacks tax/payment/costing details.
-      await LegacyTrialImporter.importIfPresent(
-        target: target.database,
-        legacyPath: p.join(root, 'berkah_pos.db'),
-        factory: selectedFactory,
-      );
-      return target;
+      await target.retryLegacyTrialImport(factory: selectedFactory);
     } catch (_) {
-      await target.close();
-      rethrow;
+      // retryLegacyTrialImport retains the user-visible error on this object.
     }
+    return target;
   }
 
   static Future<PosDatabase> openAt(
@@ -64,6 +64,26 @@ class PosDatabase {
     Future<T> Function(Transaction transaction) action,
   ) {
     return database.transaction<T>(action, exclusive: true);
+  }
+
+  /// Retries the one-time import from the older trial database. Errors are
+  /// rethrown to the caller and also retained for display in the UI.
+  Future<void> retryLegacyTrialImport({
+    DatabaseFactory? factory,
+  }) async {
+    final path = _legacyTrialPath;
+    if (path == null) return;
+    try {
+      await LegacyTrialImporter.importIfPresent(
+        target: database,
+        legacyPath: path,
+        factory: factory,
+      );
+      _legacyImportError = null;
+    } catch (error) {
+      _legacyImportError = error.toString();
+      rethrow;
+    }
   }
 
   Future<void> close() => database.close();
