@@ -293,6 +293,68 @@ class SqliteProductRepository {
     return (rows.single['value']! as int) > 0;
   }
 
+  /// Lists trial-era stock quantities that must be physically checked and
+  /// received into the live inventory ledger before being used in checkout.
+  Future<List<Map<String, Object?>>> legacyStockNeedsReview() {
+    return _database.database.rawQuery(
+      '''
+      SELECT
+        p.id AS product_id,
+        p.name_id,
+        p.sku,
+        p.stock_qty AS current_stock_qty,
+        a.original_product_id,
+        a.original_quantity
+      FROM legacy_product_stock_archive a
+      JOIN products p ON p.id = a.product_id
+      WHERE a.status = 'needs_review'
+        AND a.original_quantity > 0
+      ORDER BY p.name_id COLLATE NOCASE, p.sku
+      ''',
+    );
+  }
+
+  /// Marks a legacy stock row reviewed only after the owner confirms physical
+  /// stock was checked. The current product count must match its lot ledger.
+  Future<void> markLegacyStockReconciled(String productId) async {
+    final normalizedId = productId.trim();
+    await _database.transaction<void>((transaction) async {
+      final rows = await transaction.rawQuery(
+        '''
+        SELECT p.stock_qty,
+               COALESCE(SUM(l.on_hand_qty), 0) AS lot_qty
+        FROM products p
+        LEFT JOIN inventory_lots l ON l.product_id = p.id
+        WHERE p.id = ?
+        GROUP BY p.id, p.stock_qty
+        ''',
+        <Object?>[normalizedId],
+      );
+      if (rows.isEmpty) throw ProductNotFoundException(normalizedId);
+      if ((rows.single['stock_qty']! as int) !=
+          (rows.single['lot_qty']! as int)) {
+        throw const ProductValidationException(
+          'Stok produk tidak cocok dengan jumlah lot. Periksa persediaan '
+          'sebelum menyelesaikan rekonsiliasi trial.',
+        );
+      }
+      final changed = await transaction.update(
+        'legacy_product_stock_archive',
+        <String, Object?>{
+          'status': 'reviewed',
+          'reviewed_at_utc': DateTime.now().toUtc().toIso8601String(),
+        },
+        where: 'product_id = ? AND status = ?',
+        whereArgs: <Object?>[normalizedId, 'needs_review'],
+      );
+      if (changed != 1) {
+        throw const ProductValidationException(
+          'Arsip stok trial sudah direkonsiliasi atau tidak ditemukan.',
+        );
+      }
+    });
+  }
+
   /// Deletes a product only when no inventory or transaction history refers
   /// to it. The check and deletion are atomic to preserve auditability.
   Future<void> deleteIfUnused(String productId) async {
