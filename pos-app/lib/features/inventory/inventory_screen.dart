@@ -24,6 +24,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
   final _unitCost = TextEditingController();
   final _batchNo = TextEditingController();
   List<Product> _products = const <Product>[];
+  List<Map<String, Object?>> _legacyStock = const <Map<String, Object?>>[];
   Product? _selected;
   DateTime? _expiryDate;
   bool _loading = true;
@@ -47,6 +48,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
   Future<void> _reload() async {
     try {
       final products = await widget.repository.listAll();
+      final legacyStock = await widget.repository.legacyStockNeedsReview();
       if (!mounted) return;
       Product? selected;
       for (final product in products) {
@@ -58,6 +60,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
       selected ??= products.isEmpty ? null : products.first;
       setState(() {
         _products = products;
+        _legacyStock = legacyStock;
         _selected = selected;
         _loading = false;
         _error = null;
@@ -144,6 +147,54 @@ class _InventoryScreenState extends State<InventoryScreen> {
       setState(() => _saving = false);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Penerimaan stok gagal: $error')),
+      );
+    }
+  }
+
+  Future<void> _reviewLegacyStock(Map<String, Object?> row) async {
+    final productId = row['product_id']?.toString() ?? '';
+    final name = row['name_id']?.toString() ?? productId;
+    final originalQuantity = (row['original_quantity'] as num?)?.toInt() ?? 0;
+    final currentQuantity = (row['current_stock_qty'] as num?)?.toInt() ?? 0;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Rekonsiliasi stok trial'),
+        content: Text(
+          'Produk: $name\\n'
+          'Kuantitas dari data lama: $originalQuantity\\n'
+          'Stok aktif di aplikasi baru: $currentQuantity\\n\\n'
+          'Pastikan stok fisik sudah dihitung dan stok pembukaan yang benar '
+          'sudah dicatat melalui penerimaan stok, dengan harga pokok dan '
+          'lot/expiry yang benar. Jika stok fisik memang nol, pastikan itu '
+          'sudah diverifikasi. Arsip lama tidak otomatis menjadi stok aktif.',
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Belum'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Saya sudah memeriksa'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    try {
+      await widget.repository.markLegacyStockReconciled(productId);
+      await _reload();
+      widget.onChanged();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Stok lama ditandai sudah ditinjau.')),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Rekonsiliasi belum selesai: $error')),
       );
     }
   }
@@ -292,6 +343,54 @@ class _InventoryScreenState extends State<InventoryScreen> {
               ),
             ),
           ),
+          if (_legacyStock.isNotEmpty) ...<Widget>[
+            const SizedBox(height: 12),
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      'Stok trial perlu direkonsiliasi',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    const SizedBox(height: 6),
+                    const Text(
+                      'Kuantitas lama disimpan sebagai arsip. Stok lama tidak '
+                      'diaktifkan otomatis karena batch, expiry, dan HPP '
+                      'tidak tersedia di database trial.',
+                    ),
+                    const SizedBox(height: 8),
+                    ..._legacyStock.map((row) {
+                      final name = row['name_id']?.toString() ?? '-';
+                      final original = (row['original_quantity'] as num?)
+                              ?.toInt() ??
+                          0;
+                      final current = (row['current_stock_qty'] as num?)
+                              ?.toInt() ??
+                          0;
+                      return ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: Text(name),
+                        subtitle: Text(
+                          'Stok lama: ' + original.toString() +
+                          ' · Stok aktif: ' + current.toString(),
+                        ),
+                        trailing: IconButton(
+                          tooltip: 'Rekonsiliasi stok lama',
+                          onPressed: _saving
+                              ? null
+                              : () => _reviewLegacyStock(row),
+                          icon: const Icon(Icons.fact_check_outlined),
+                        ),
+                      );
+                    }),
+                  ],
+                ),
+              ),
+            ),
+          ],
           const SizedBox(height: 12),
           Text(
             'Ringkasan stok lokal',
