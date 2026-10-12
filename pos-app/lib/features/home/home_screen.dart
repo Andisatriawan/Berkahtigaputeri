@@ -482,8 +482,8 @@ class _ConfigurationScreenState extends State<_ConfigurationScreen> {
     if (!service.hasAuthenticatedSession) {
       setState(() {
         _status = 'Akses cloud diblokir: belum ada sesi login yang '
-            'terautentikasi. Aplikasi ini belum memiliki alur login/enrollment '
-            'yang dapat mengotorisasi akses tenant; ID lokal tidak cukup.';
+            'terautentikasi. ID tenant/perangkat lokal bukan kredensial dan '
+            'tidak menggantikan membership atau enrollment yang diverifikasi server.';
       });
       return;
     }
