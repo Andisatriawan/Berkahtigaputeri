@@ -34,7 +34,7 @@ void main() {
     expect(find.text('Beranda'), findsOneWidget);
     expect(find.text('Buka kasir'), findsOneWidget);
 
-    await tester.tap(find.text('Produk'));
+    await tester.tap(find.text('Produk').last);
     await tester.pumpAndSettle();
     expect(find.text('Tambah produk'), findsOneWidget);
 
