@@ -11,16 +11,13 @@
 ## Outstanding
 - The Android scaffold is generated during CI if missing; the manifest and wrapper are not tracked in the inspected tree. This makes the build dependent on runtime generation rather than a fully reviewed committed Android project.
 - `final-pos-sync.yml` performs a dry-run sync only. Confirm that this is the intended behavior; it should not be treated as a production migration/deployment pipeline.
-- Host checks not possible here: systemd unit enabled/active, Restart=always, runner ownership, SELinux labels, linger, reboot recovery, disk/RAM/swap, runner version and labels.
+- Historical Fedora runner host checks are retired after CI migration to GitHub-hosted Ubuntu 24.04. No runner systemd unit, SELinux label, linger setting, reboot recovery procedure, or workstation availability is required for repository CI.
 - The workflow does not currently build split APKs or use obfuscation/debug-symbol output.
 - Need pin all third-party actions to reviewed immutable SHAs according to repository policy; the source mixes a pinned Android setup action with version tags for others.
 - Workflow YAML parser validation and actual five-push queue test were not run here.
 
-## Required commands on Fedora
-```bash
-sudo systemctl is-enabled actions.runner.new-berkah.btp-fedora44-01.service
-sudo systemctl is-active actions.runner.new-berkah.btp-fedora44-01.service
-systemctl show actions.runner.new-berkah.btp-fedora44-01.service -p Restart -p User
-gh api repos/new-berkah/Berkahtigaputeri/actions/runners --jq '.runners[] | {name,status,busy}'
-```
-Then run YAML validation, controlled push concurrency test, reboot recovery and log-secret review. Do not report host configuration as verified from GitHub workflow source alone.
+## Required validation after runner migration
+
+The historical Fedora systemd instructions above are retired. All active workflow definitions use GitHub-hosted Ubuntu 24.04 runners. Validate them through actual GitHub Actions run/job records and logs, not through a long-running workstation service.
+
+Required gates remain: workflow YAML validation, a real job start, Flutter analysis/tests, Android compile/build, and artifact verification. A `startup_failure` run with `jobs: []` is an infrastructure/startup blocker, not a test result.
