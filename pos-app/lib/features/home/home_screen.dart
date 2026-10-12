@@ -442,17 +442,35 @@ class _ConfigurationScreenState extends State<_ConfigurationScreen> {
       });
       return;
     }
+    if (!service.hasAuthenticatedSession) {
+      setState(() {
+        _status = 'Akses cloud diblokir: belum ada sesi login yang '
+            'terautentikasi. Aplikasi ini belum memiliki alur login/enrollment '
+            'yang dapat mengotorisasi akses tenant; ID lokal tidak cukup.';
+      });
+      return;
+    }
+    final tenantId = widget.identityStore.tenantId.trim();
+    final deviceId = widget.identityStore.deviceId.trim();
+    if (tenantId.isEmpty || deviceId.isEmpty) {
+      setState(() {
+        _status = 'Tenant dan perangkat belum terdaftar oleh layanan '
+            'enrollment. Hubungkan akun melalui alur enrollment resmi sebelum '
+            'meminta konfigurasi cloud.';
+      });
+      return;
+    }
     setState(() {
       _loading = true;
       _status = null;
     });
     try {
       final config = await service.getEffectiveConfig(
-        tenantId: widget.identityStore.tenantId,
-        deviceId: widget.identityStore.deviceId,
+        tenantId: tenantId,
+        deviceId: deviceId,
         service: 'pos',
       );
-      final features = await service.getFeatures(widget.identityStore.tenantId);
+      final features = await service.getFeatures(tenantId);
       if (!mounted) return;
       setState(() {
         _configuration = config.value;
@@ -496,8 +514,14 @@ class _ConfigurationScreenState extends State<_ConfigurationScreen> {
                     'otorisasi server.',
                   ),
                   const SizedBox(height: 12),
-                  SelectableText('Tenant: ' + widget.identityStore.tenantId),
-                  SelectableText('Device: ' + widget.identityStore.deviceId),
+                  SelectableText('Tenant: ' +
+                      (widget.identityStore.tenantId.isEmpty
+                          ? 'Belum terdaftar'
+                          : widget.identityStore.tenantId)),
+                  SelectableText('Device: ' +
+                      (widget.identityStore.deviceId.isEmpty
+                          ? 'Belum terdaftar'
+                          : widget.identityStore.deviceId)),
                 ],
               ),
             ),
