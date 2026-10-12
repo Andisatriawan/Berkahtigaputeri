@@ -219,8 +219,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
                   title: Text('TRIAL-$originalId'),
                   subtitle: Text(
                     (sale['created_at'] ?? '').toString() +
-                    ' · $itemCount item · ' +
-                    (sale['email'] ?? '').toString(),
+                    ' · $itemCount item · arsip trial',
                   ),
                   trailing: Text(_money(amount)),
                 ),
