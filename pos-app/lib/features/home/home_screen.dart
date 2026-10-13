@@ -74,7 +74,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     // Build tab content only after its first visit. This avoids starting
     // multiple database reads and loading animations for off-screen tabs.
-    final pages = List<Widget>.generate(_titles.length, (index) {
+    final tabPages = List<Widget>.generate(_titles.length, (index) {
       if (!_visitedIndices.contains(index)) {
         return const SizedBox.shrink();
       }
@@ -115,6 +115,14 @@ class _HomeScreenState extends State<HomeScreen> {
           return const SizedBox.shrink();
       }
     });
+    final pages = List<Widget>.generate(tabPages.length, (index) {
+      if (!_visitedIndices.contains(index)) return tabPages[index];
+      return TickerMode(
+        enabled: index == _selectedIndex,
+        child: tabPages[index],
+      );
+    });
+
 
     return Scaffold(
       appBar: AppBar(
