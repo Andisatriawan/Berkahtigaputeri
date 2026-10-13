@@ -206,8 +206,6 @@ class _InventoryScreenState extends State<InventoryScreen> {
         date.day.toString().padLeft(2, '0');
   }
 
-  String _money(int amount) => 'Rp ' + amount.toString();
-
   @override
   Widget build(BuildContext context) {
     if (_loading) {
