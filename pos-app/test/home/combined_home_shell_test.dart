@@ -5,6 +5,16 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
+Future<void> _settle(WidgetTester tester, String checkpoint) async {
+  print('PUMP_SETTLE_BEGIN:$checkpoint');
+  await tester.pumpAndSettle(
+    const Duration(milliseconds: 100),
+    EnginePhase.sendSemanticsUpdate,
+    const Duration(seconds: 5),
+  );
+  print('PUMP_SETTLE_DONE:$checkpoint');
+}
+
 void main() {
   testWidgets('combined POS shell exposes product, cashier, stock and reports',
       (tester) async {
@@ -23,32 +33,32 @@ void main() {
         identityStore: AppIdentityStore(preferences),
       ),
     );
-    await tester.pumpAndSettle();
+    await _settle(tester, 'initial app');
 
     // No Supabase client is injected in this test, so enter explicit local-only
     // mode rather than implying the cloud account is authenticated.
     expect(find.text('Lanjutkan sebagai kasir lokal'), findsOneWidget);
     await tester.tap(find.text('Lanjutkan sebagai kasir lokal'));
-    await tester.pumpAndSettle();
+    await _settle(tester, 'local mode');
 
     expect(find.text('Beranda'), findsOneWidget);
     expect(find.text('Buka kasir'), findsOneWidget);
 
     await tester.tap(find.text('Produk').last);
-    await tester.pumpAndSettle();
+    await _settle(tester, 'products tab');
     expect(find.text('Tambah produk'), findsOneWidget);
 
     await tester.tap(find.text('Kasir'));
-    await tester.pumpAndSettle();
+    await _settle(tester, 'cashier tab');
     expect(find.text('Katalog produk'), findsOneWidget);
     expect(find.text('Selesaikan checkout'), findsOneWidget);
 
     await tester.tap(find.text('Stok'));
-    await tester.pumpAndSettle();
+    await _settle(tester, 'stock tab');
     expect(find.text('Ringkasan stok lokal'), findsOneWidget);
 
     await tester.tap(find.text('Laporan'));
-    await tester.pumpAndSettle();
+    await _settle(tester, 'reports tab');
     expect(find.text('Transaksi terbaru'), findsOneWidget);
   });
 }
