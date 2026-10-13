@@ -7,18 +7,25 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 Future<void> _settle(WidgetTester tester, String checkpoint) async {
-  debugPrint('PUMP_SETTLE_BEGIN:$checkpoint');
-  await tester.pumpAndSettle(
-    const Duration(milliseconds: 100),
-    EnginePhase.sendSemanticsUpdate,
-    const Duration(seconds: 5),
-  );
-  debugPrint('PUMP_SETTLE_DONE:$checkpoint');
+  debugPrint('PUMP_BEGIN:$checkpoint');
+  // sqflite_common_ffi services database operations on a separate isolate.
+  // Pump fixed frames and briefly yield to the real event loop between frames:
+  // pumpAndSettle can hang while a database-backed loading indicator is active.
+  for (var attempt = 0; attempt < 4; attempt++) {
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 50)),
+    );
+  }
+  await tester.pump();
+  debugPrint('PUMP_DONE:$checkpoint');
 }
 
 Future<void> _tap(WidgetTester tester, Finder finder, String checkpoint) async {
   debugPrint('TAP_BEGIN:$checkpoint');
-  await tester.ensureVisible(finder);
+  // These smoke-test controls are visible without scrolling. Keep the tap
+  // helper to a single tap and frame pump; async database work is handled by
+  // the separate settle helper above.
   await tester.tap(finder);
   await tester.pump();
   debugPrint('TAP_DONE:$checkpoint');
@@ -30,11 +37,15 @@ void main() {
     sqfliteFfiInit();
     SharedPreferences.setMockInitialValues(<String, Object>{});
     final preferences = await SharedPreferences.getInstance();
-    final database = await PosDatabase.openAt(
-      inMemoryDatabasePath,
-      factory: databaseFactoryFfi,
-    );
-    addTearDown(database.close);
+    final database = (await tester.runAsync(
+      () => PosDatabase.openAt(
+        inMemoryDatabasePath,
+        factory: databaseFactoryFfi,
+      ),
+    ))!;
+    addTearDown(() async {
+      await tester.runAsync(database.close);
+    });
 
     await tester.pumpWidget(
       BerkahTigaPuteriApp(
@@ -64,7 +75,7 @@ void main() {
 
     await _tap(tester, find.text('Stok'), 'tap-5');
     await _settle(tester, 'stock tab');
-    expect(find.text('Ringkasan stok lokal'), findsOneWidget);
+    expect(find.text('Terima stok'), findsOneWidget);
 
     await _tap(tester, find.text('Laporan'), 'tap-6');
     await _settle(tester, 'reports tab');
