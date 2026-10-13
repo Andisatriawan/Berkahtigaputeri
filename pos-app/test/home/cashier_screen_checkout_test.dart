@@ -20,7 +20,9 @@ Future<void> _settle(WidgetTester tester, String checkpoint) async {
 
 Future<void> _tap(WidgetTester tester, Finder finder, String checkpoint) async {
   debugPrint('TAP_BEGIN:$checkpoint');
-  await tester.ensureVisible(finder);
+  // The target controls in these smoke tests are laid out in the viewport.
+  // Tap directly: ensureVisible waits on scrollable animations and has caused
+  // the test body to hang until the outer 60-second timeout in hosted CI.
   await tester.tap(finder);
   await tester.pump();
   debugPrint('TAP_DONE:$checkpoint');
