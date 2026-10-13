@@ -54,5 +54,35 @@ void main() {
       expect(features.pos, isTrue);
       expect(features.akuntansi, isTrue);
     });
+
+    test('feature flags are derived from effective app_config features', () {
+      final features = TenantFeatures.fromEffectiveConfig(
+        <String, dynamic>{
+          'features': <String, dynamic>{'pos': true, 'akuntansi': false},
+        },
+      );
+
+      expect(features.pos, isTrue);
+      expect(features.akuntansi, isFalse);
+    });
+
+    test('supports canonical flat feature flags in effective config', () {
+      final features = TenantFeatures.fromEffectiveConfig(
+        <String, dynamic>{
+          'pos_enabled': true,
+          'akuntansi_enabled': true,
+        },
+      );
+
+      expect(features.pos, isTrue);
+      expect(features.akuntansi, isTrue);
+    });
+
+    test('fails closed when effective app_config has no feature flags', () {
+      expect(
+        () => TenantFeatures.fromEffectiveConfig(<String, dynamic>{}),
+        throwsFormatException,
+      );
+    });
   });
 }
