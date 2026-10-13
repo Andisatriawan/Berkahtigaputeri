@@ -246,7 +246,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
                       const Text('Tambahkan produk terlebih dahulu.')
                     else
                       DropdownButtonFormField<Product>(
-                        value: _selected,
+                        initialValue: _selected,
                         isExpanded: true,
                         decoration: const InputDecoration(
                           labelText: 'Produk',
