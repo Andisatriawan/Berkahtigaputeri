@@ -31,7 +31,7 @@ At the audited base revision, `scripts/sync_excel_to_supabase_legacy.py:505-547`
 
 ## 3. STAGING-VERIFIED — read-only database inspection
 
-The connected Supabase account exposed two projects, both explicitly named as staging environments. Queries below were SELECT-only and compared relational rows with key IDs derived from `public.app_config`.
+The connected Supabase account exposed two staging projects. The existing `docs/permanent/DOC_11_P0_SECURITY_VERIFICATION_20261008.md:9-24` identifies `berkahtigaputeri-pos-staging` (`cztlmwzfrhyafgawphgw`) as the canonical live target, while explicitly warning that it is not production. The separate `berkahtigaputeri-pos-staging-clone` (`txwzhesvcjftybrlhnzs`) is a clone/testing environment. Queries below were SELECT-only and compared relational rows with key IDs derived from `public.app_config`.
 
 | Check | `berkahtigaputeri-pos-staging-clone` (`txwzhesvcjftybrlhnzs`) | `berkahtigaputeri-pos-staging` (`cztlmwzfrhyafgawphgw`) |
 |---|---:|---:|
@@ -61,7 +61,7 @@ Both projects also had the required `app_config` columns: `key text NOT NULL`, `
 ## 4. Risks and required disposition
 
 1. Do not mark Phase 2 green yet. The observed staging projections are not aligned across the two accessible projects.
-2. Select the single authoritative staging target for Final Pos validation. The clone's missing 100/108/140 projections require workbook sync; the older staging project's three extra tenant rows and two extra device rows require identity-level reconciliation before any deletion or archival decision.
+2. Use `berkahtigaputeri-pos-staging` (`cztlmwzfrhyafgawphgw`) as the Phase 2 staging acceptance target, consistent with DOC_11. Its 3 extra tenant rows and 2 extra device rows need identity-level reconciliation before any deletion or archival decision. Do not use the staging clone's missing 100/108/140 projections as evidence of the canonical target's state.
 3. Run the canonical sync only through an authorized staged workflow with the expected credentials and a reviewed recovery plan. Verify exact row identities and counts after synchronization.
 4. Keep production state unknown unless an explicitly identified production project is made available and read-only checks are performed.
 5. The Phase 2 source fix must pass both the Flutter CI workflow and the workbook-validation workflow before merge.
