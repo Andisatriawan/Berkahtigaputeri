@@ -7,6 +7,16 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../helpers/test_database.dart';
 
+Future<void> _settle(WidgetTester tester, String checkpoint) async {
+  print('PUMP_SETTLE_BEGIN:$checkpoint');
+  await tester.pumpAndSettle(
+    const Duration(milliseconds: 100),
+    EnginePhase.sendSemanticsUpdate,
+    const Duration(seconds: 5),
+  );
+  print('PUMP_SETTLE_DONE:$checkpoint');
+}
+
 void main() {
   testWidgets(
     'cashier screen commits sale, stock, journal and pending outbox together',
@@ -43,20 +53,20 @@ void main() {
           identityStore: AppIdentityStore(preferences),
         ),
       );
-      await tester.pumpAndSettle();
+      await _settle(tester, 'initial app');
 
       await tester.tap(find.text('Lanjutkan sebagai kasir lokal'));
-      await tester.pumpAndSettle();
+      await _settle(tester, 'local mode');
       await tester.tap(find.text('Kasir'));
-      await tester.pumpAndSettle();
+      await _settle(tester, 'cashier tab');
 
       expect(find.text('Kopi Integrasi'), findsOneWidget);
       await tester.tap(find.byTooltip('Tambahkan ke keranjang'));
-      await tester.pumpAndSettle();
+      await _settle(tester, 'add item');
 
       expect(find.text('Selesaikan checkout'), findsOneWidget);
       await tester.tap(find.text('Selesaikan checkout'));
-      await tester.pumpAndSettle();
+      await _settle(tester, 'checkout');
 
       expect(find.text('Transaksi tersimpan'), findsOneWidget);
       expect(
