@@ -1,33 +1,18 @@
--- DOC_05 FEATURE FLAGS UAT SEED
--- Copy paste ini di Supabase SQL Editor. ChatGPT tidak menjalankan SQL ini langsung.
--- Phase 6: every app_config seed has version=1 on first insert.
--- A conflict is a new semantic write, so it MUST bump the existing database
--- version instead of preserving or resetting it.
-
-insert into tenants (tenant_id, toko_name, paket, package_id, features, max_user, is_blocked)
-values
-  ('clientA', 'Client A POS Only', 'basic', 'com.btp.uat', '{"pos":true,"akuntansi":false}'::jsonb, 1, false),
-  ('clientB', 'Client B POS + Akuntansi', 'pro', 'com.btp.uat', '{"pos":true,"akuntansi":true}'::jsonb, 5, false)
-on conflict (tenant_id) do update set
-  toko_name = excluded.toko_name,
-  paket = excluded.paket,
-  features = excluded.features,
-  max_user = excluded.max_user,
-  is_blocked = excluded.is_blocked,
-  updated_at = now();
-
-insert into public.app_config as app_config (key, value, updated_at)
-values
-  ('tenant:clientA:service:pos', '{"qris_enabled":true,"mdr":0.5,"qris_mdr":0.5,"version":1}'::jsonb, now()),
-  ('tenant:clientB:service:pos', '{"qris_enabled":true,"mdr":0.7,"qris_mdr":0.7,"version":1}'::jsonb, now()),
-  ('tenant:clientB:service:akuntansi', '{"auto_jurnal":true,"ppn_account":"2-2010","version":1}'::jsonb, now())
-on conflict (key) do update set
-  value = (excluded.value - 'version')
-    || jsonb_build_object(
-      'version',
-      (app_config.value ->> 'version')::integer + 1
-    ),
-  updated_at = excluded.updated_at;
-
-select tenant_id, features from tenants where tenant_id in ('clientA','clientB') order by tenant_id;
-select key, value from app_config where key like 'tenant:clientA:service:%' or key like 'tenant:clientB:service:%' order by key;
+-- HISTORICAL / SUPERSEDED — DO NOT EXECUTE.
+--
+-- This file was an old two-service UAT seed for tenant IDs clientA/clientB.
+-- It mutates public.tenants.features and inserts legacy app_config service keys,
+-- which conflicts with the current canonical workbook-owned Final Pos inventory.
+--
+-- Current authorities:
+--   docs/permanent/DOC_00_CANONICAL_ARCHITECTURE_DECISION.md
+--   docs/permanent/DOC_02_FINAL_POS_RELATIONAL_OWNERSHIP.sql
+--   scripts/sync_excel_to_supabase.py
+--
+-- The only canonical app_config inventory is 352 keys from the workbook:
+-- 1 global + 3 templates + 100 tenants + 140 service rows + 108 devices.
+-- Runtime feature flags are resolved through canonical app_config; tenants.features
+-- is only a deprecated compatibility projection.
+--
+-- Do not copy/paste the former seed into a live or staging database. Use a reviewed
+-- workbook-sync workflow after the Phase 2/Phase 4 gates are satisfied.
