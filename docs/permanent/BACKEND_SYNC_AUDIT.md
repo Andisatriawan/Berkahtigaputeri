@@ -54,7 +54,8 @@ Both projects also had the required `app_config` columns: `key text NOT NULL`, `
 
 - **SOURCE-/RUNTIME-VERIFIED:** both staging projects contain the correct 352-key `app_config` inventory and canonical hash.
 - **RUNTIME-VERIFIED:** the staging clone is not synchronized with the canonical relational inventory; it has only 2 tenant rows, 2 device rows, and no tenant-service rows.
-- **RUNTIME-VERIFIED:** the other staging project has the 100 expected tenant projections, 108 expected device projections, and 140 service projections, but also has 3 extra tenant rows and 2 extra device rows not represented by canonical keys.
+- **RUNTIME-VERIFIED:** canonical staging has all workbook-derived tenant/device/service projections, but also has three unmatched tenant rows (`berkah_sumber`, `clientA`, `clientB`) and two unmatched device rows (`cfdb73b1-04aa-4272-8bda-9eac875e4ef1`, `infinix_xos_123`). The unmatched devices both point at `berkah_sumber`.
+- **RUNTIME-VERIFIED:** a read-only dependency-count check found 2 licence rows linked to those tenant/device identifiers and 1 client-status row linked to the devices. No matching `tenant_services`, `pos_memberships`, `pos_manager_pins`, or `pos_pin_audit` rows were found for those three legacy tenants/devices. This is not enough to declare the records disposable: licence/status compatibility references exist, and other constraints or historical relationships may matter.
 - **NOT VERIFIED:** any production project's state. No production project was listed by the connected Supabase account.
 - **NOT RUN:** workbook sync against either staging project; no Supabase mutation was authorized or executed in this audit.
 
