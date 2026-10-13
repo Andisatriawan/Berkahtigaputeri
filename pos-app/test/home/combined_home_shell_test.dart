@@ -16,6 +16,12 @@ Future<void> _settle(WidgetTester tester, String checkpoint) async {
   debugPrint('PUMP_SETTLE_DONE:$checkpoint');
 }
 
+Future<void> _tap(WidgetTester tester, Finder finder, String checkpoint) async {
+  debugPrint('TAP_BEGIN:$checkpoint');
+  await _tap(tester, finder, 'tap-1');
+  debugPrint('TAP_DONE:$checkpoint');
+}
+
 void main() {
   testWidgets('combined POS shell exposes product, cashier, stock and reports',
       (tester) async {
@@ -39,27 +45,27 @@ void main() {
     // No Supabase client is injected in this test, so enter explicit local-only
     // mode rather than implying the cloud account is authenticated.
     expect(find.text('Lanjutkan sebagai kasir lokal'), findsOneWidget);
-    await tester.tap(find.text('Lanjutkan sebagai kasir lokal'));
+    await _tap(tester, find.text('Lanjutkan sebagai kasir lokal'), 'tap-2');
     await _settle(tester, 'local mode');
 
     expect(find.text('Beranda'), findsOneWidget);
     expect(find.text('Buka kasir'), findsOneWidget);
 
-    await tester.tap(find.text('Produk').last);
+    await _tap(tester, find.text('Produk').last, 'tap-3');
     await _settle(tester, 'products tab');
     expect(find.text('Tambah produk'), findsOneWidget);
 
-    await tester.tap(find.text('Kasir'));
+    await _tap(tester, find.text('Kasir'), 'tap-4');
     await _settle(tester, 'cashier tab');
     expect(find.text('Katalog produk'), findsOneWidget);
     expect(find.text('Selesaikan checkout'), findsOneWidget);
 
-    await tester.tap(find.text('Stok'));
+    await _tap(tester, find.text('Stok'), 'tap-5');
     await _settle(tester, 'stock tab');
     expect(find.text('Ringkasan stok lokal'), findsOneWidget);
 
-    await tester.tap(find.text('Laporan'));
+    await _tap(tester, find.text('Laporan'), 'tap-6');
     await _settle(tester, 'reports tab');
     expect(find.text('Transaksi terbaru'), findsOneWidget);
-  });
+  }, timeout: const Timeout(Duration(seconds: 60)));
 }
