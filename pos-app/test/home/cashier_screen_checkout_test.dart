@@ -102,13 +102,13 @@ void main() {
       late List<Map<String, Object?>> outbox;
       late Product product;
       await tester.runAsync(() async {
-        final sales = await database.database.query('sales');
-        final saleItems = await database.database.query('sale_items');
-        final journals = await database.database.query('journals');
-        final journalLines = await database.database.query('journal_lines');
-        final stockMovements = await database.database.query('stock_movements');
-        final outbox = await database.database.query('outbox_events');
-        final product = (await products.findById('P-CHECKOUT-UI'))!;
+        sales = await database.database.query('sales');
+        saleItems = await database.database.query('sale_items');
+        journals = await database.database.query('journals');
+        journalLines = await database.database.query('journal_lines');
+        stockMovements = await database.database.query('stock_movements');
+        outbox = await database.database.query('outbox_events');
+        product = (await products.findById('P-CHECKOUT-UI'))!;
       });
 
       expect(sales, hasLength(1));
