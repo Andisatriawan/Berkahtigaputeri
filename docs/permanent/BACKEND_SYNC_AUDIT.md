@@ -59,6 +59,12 @@ Both projects also had the required `app_config` columns: `key text NOT NULL`, `
 - **NOT VERIFIED:** any production project's state. No production project was listed by the connected Supabase account.
 - **NOT RUN:** workbook sync against either staging project; no Supabase mutation was authorized or executed in this audit.
 
+### Additional source-of-truth findings
+
+- The former `docs/permanent/DOC_05_FEATURE_FLAGS.md` described `tenants.features` as authoritative. This conflicts with the accepted DOC_00/DOC_02 decision. This PR now labels that pilot document historical/superseded and replaces the old executable `DOC_05_FEATURE_FLAGS.sql` seed with a comment-only warning so the legacy seed cannot be copied as current instructions.
+- Read-only inspection of canonical staging's 100 workbook-owned tenant keys found template entitlement flags and service-row presence aligned: BASIC 60 tenants (POS only), PRO 35 (POS + Akuntansi), ENTERPRISE 5 (POS + Akuntansi), with zero mismatches. This supports resolving flags through the effective `app_config` inheritance without reading `tenants.features`; it is staging-only evidence.
+- **Phase 3 follow-up discovered on base `main`:** `btp-admin/feature-flags.js:4-5` still directly selects and updates `tenants.features`. The current Admin widget is therefore not yet source-of-truth compliant. Phase 3 must migrate that control to the canonical app_config / authorized atomic-write path and recertify Admin/APK/RPC parity. This has been documented, not modified in the Phase 2 branch, to preserve roadmap sequencing.
+
 ## 4. Risks and required disposition
 
 1. Do not mark Phase 2 green yet. The observed staging projections are not aligned across the two accessible projects.
