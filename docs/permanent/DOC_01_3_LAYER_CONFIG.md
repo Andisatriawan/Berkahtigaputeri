@@ -175,7 +175,7 @@ All effective-config implementations must produce the same result for the same `
 - Final Pos Template Admin where it presents effective values;
 - verification tests.
 
-At the correction-program baseline, Flutter `pos-app/lib/core/config/config_service.dart` already contains TEMPLATE resolution and is the local-merge behavioral reference while other implementations are brought into parity.
+Flutter ConfigService calls the authenticated `get_effective_config` RPC and uses a previously returned effective result only as a tuple-scoped offline cache. It does not fetch raw GLOBAL/TEMPLATE/TENANT/SERVICE rows directly. `ConfigService.mergeLayers()` documents the required five-layer precedence.
 
 ## Compliance rules
 
