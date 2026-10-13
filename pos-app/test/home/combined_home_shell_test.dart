@@ -1,18 +1,19 @@
 import 'package:berkahtigaputeri_pos/core/config/app_identity_store.dart';
 import 'package:berkahtigaputeri_pos/core/database/pos_database.dart';
 import 'package:berkahtigaputeri_pos/main.dart';
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 Future<void> _settle(WidgetTester tester, String checkpoint) async {
-  print('PUMP_SETTLE_BEGIN:$checkpoint');
+  debugPrint('PUMP_SETTLE_BEGIN:$checkpoint');
   await tester.pumpAndSettle(
     const Duration(milliseconds: 100),
     EnginePhase.sendSemanticsUpdate,
     const Duration(seconds: 5),
   );
-  print('PUMP_SETTLE_DONE:$checkpoint');
+  debugPrint('PUMP_SETTLE_DONE:$checkpoint');
 }
 
 void main() {
