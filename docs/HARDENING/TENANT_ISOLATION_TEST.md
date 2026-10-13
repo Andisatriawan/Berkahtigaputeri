@@ -1,6 +1,6 @@
 # Tenant isolation report
 
-**Status: NOT VERIFIED — automated two-tenant adversarial database test still required.**
+**Status: STAGING SQL REGRESSION EXECUTED — 27 pgTAP assertions; full runtime/load certification remains pending.**
 
 ## Evidence
 - The canonical architecture docs describe tenant-scoped configuration and a device-to-tenant relationship.
@@ -21,3 +21,11 @@ Create tenants A and B, each with a distinct user and transaction. As A, assert 
 
 ## Stress tests not run
 100 tenants × 1000 transactions, concurrent reports, query latency under RLS, tenant-resolution spoofing and cross-tenant RPC attempts. No test result should be considered passing until logs and CI evidence are attached.
+
+## Phase 5 staging evidence — 2026-10-13
+
+The migration `supabase/migrations/20261013120000_phase5_tenant_isolation_hardening.sql` was applied to the named staging project and staging clone. The SQL regression test `supabase/tests/tenant_isolation.test.sql` ran transactionally against `berkahtigaputeri-pos-staging`; its last assertion emitted `ok 27`, and pgTAP produced no failure/plan-mismatch diagnostics. The test rolled back fixture users, license and device ownership changes.
+
+Verified test outcomes include RLS on the four core tables; no anonymous SELECT or RPC execute; other-tenant tenant/device/licence/config rows hidden; exact five-layer POS and Akuntansi result parity; and rejected cross-tenant RPC requests with SQLSTATE `42501`.
+
+The connected database tool returned SQL test output, not a browser screenshot. Therefore a screenshot of an HTTP 403 response was **not captured**, and HTTP response mapping was not independently exercised. The requested 50-concurrent-authorized-tenant load test was also **not run**. Installed-APK runtime behavior and production state are not certified by this report.
