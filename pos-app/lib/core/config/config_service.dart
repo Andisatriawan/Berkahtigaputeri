@@ -73,29 +73,30 @@ class ConfigService {
   }) async {
     final cacheKey = _effectiveCacheKey(tenantId, deviceId, service);
 
+    // The server RPC is the only remote path for raw layered configuration.
+    // Never SELECT GLOBAL/TEMPLATE/TENANT/SERVICE rows from the client.
+    if (!hasAuthenticatedSession) {
+      throw StateError(
+        'An authenticated Supabase session is required for effective configuration.',
+      );
+    }
+
     try {
-      Map<String, dynamic> effective;
-      try {
-        final response = await _client.rpc(
-          'get_effective_config',
-          params: <String, dynamic>{
-            'p_tenant': tenantId,
-            'p_device': deviceId,
-            'p_service': service,
-          },
-        );
-        effective = _asJsonMap(response);
-      } catch (_) {
-        effective = await _fallbackSelectAndMerge(
-          tenantId: tenantId,
-          deviceId: deviceId,
-          service: service,
-        );
-      }
+      final response = await _client.rpc(
+        'get_effective_config',
+        params: <String, dynamic>{
+          'p_tenant': tenantId,
+          'p_device': deviceId,
+          'p_service': service,
+        },
+      );
+      final effective = _asJsonMap(response);
 
       await _preferences.setString(cacheKey, jsonEncode(effective));
       return EffectiveConfigResult(value: effective, fromCache: false);
     } catch (_) {
+      // Offline fallback is limited to the previously returned effective value
+      // for this exact tenant/device/service tuple, never raw table rows.
       final cached = _preferences.getString(cacheKey);
       if (cached == null) rethrow;
       return EffectiveConfigResult(
@@ -103,65 +104,6 @@ class ConfigService {
         fromCache: true,
       );
     }
-  }
-
-  Future<Map<String, dynamic>> _fallbackSelectAndMerge({
-    required String tenantId,
-    required String deviceId,
-    required String service,
-  }) async {
-    final tenantKey = 'tenant:$tenantId';
-    String? templateId;
-
-    final tenantRow = await _client
-        .from('app_config')
-        .select('value')
-        .eq('key', tenantKey)
-        .maybeSingle();
-
-    if (tenantRow != null && tenantRow['value'] != null) {
-      final tenantValue = _asJsonMap(tenantRow['value']);
-      final rawTemplate = tenantValue['template_id'] ?? tenantValue['template'];
-      if (rawTemplate != null && rawTemplate.toString().trim().isNotEmpty) {
-        templateId = rawTemplate.toString().trim().toUpperCase();
-      }
-    }
-
-    final orderedKeys = <String>[
-      'global',
-      if (templateId != null) 'template:$templateId',
-      tenantKey,
-      'tenant:$tenantId:service:$service',
-      'device:$deviceId',
-    ];
-
-    final rows = await _client
-        .from('app_config')
-        .select('key,value')
-        .inFilter('key', orderedKeys);
-
-    final valuesByKey = <String, Map<String, dynamic>>{};
-    for (final rawRow in rows) {
-      final row = Map<String, dynamic>.from(rawRow as Map);
-      final key = row['key'] as String?;
-      if (key == null) continue;
-      final value = _asJsonMap(row['value']);
-      if (key == 'tenant:$tenantId:service:$service' &&
-          value['inherited_from_template'] != null) {
-        value
-          ..remove('mdr')
-          ..remove('mdr_pos')
-          ..remove('qris_mdr')
-          ..remove('mdr_%');
-      }
-      valuesByKey[key] = value;
-    }
-
-    return mergeLayers(
-      orderedKeys.map(
-        (key) => valuesByKey[key] ?? const <String, dynamic>{},
-      ),
-    );
   }
 
   static Map<String, dynamic> mergeLayers(
