@@ -508,12 +508,12 @@ class _ConfigurationScreenState extends State<_ConfigurationScreen> {
         deviceId: deviceId,
         service: 'pos',
       );
-      final features = await service.getFeatures(tenantId);
+      final features = TenantFeatures.fromEffectiveConfig(config.value);
       if (!mounted) return;
       setState(() {
         _configuration = config.value;
-        _features = features.value;
-        _status = config.fromCache || features.fromCache
+        _features = features;
+        _status = config.fromCache
             ? 'Konfigurasi berasal dari cache lokal.'
             : 'Supabase memberikan respons; validitas sesi dan otorisasi '
                 'perangkat tetap harus diverifikasi.';
