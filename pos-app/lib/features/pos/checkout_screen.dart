@@ -279,7 +279,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                               ),
                             const Divider(),
                             DropdownButtonFormField<PaymentMethod>(
-                              value: _method,
+                              initialValue: _method,
                               decoration: const InputDecoration(
                                 labelText: 'Metode pembayaran',
                                 border: OutlineInputBorder(),
