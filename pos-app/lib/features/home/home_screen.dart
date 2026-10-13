@@ -44,6 +44,7 @@ class _HomeScreenState extends State<HomeScreen> {
   late final PaymentService _payments;
   int _selectedIndex = 0;
   int _refreshCounter = 0;
+  final Set<int> _visitedIndices = <int>{0};
 
   static const _titles = <String>[
     'Beranda', 'Produk', 'Kasir', 'Stok', 'Laporan',
@@ -62,37 +63,66 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() => _refreshCounter++);
   }
 
+  void _selectTab(int index) {
+    setState(() {
+      _selectedIndex = index;
+      _visitedIndices.add(index);
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
-    final pages = <Widget>[
-      _DashboardScreen(
-        key: ValueKey<String>('dashboard-$_refreshCounter'),
-        database: widget.database,
-        onOpenProducts: () => setState(() => _selectedIndex = 1),
-        onOpenCheckout: () => setState(() => _selectedIndex = 2),
-        onOpenInventory: () => setState(() => _selectedIndex = 3),
-        onOpenReports: () => setState(() => _selectedIndex = 4),
-      ),
-      ProductScreen(
-        key: ValueKey<String>('products-$_refreshCounter'),
-        repository: _products,
-        onChanged: _refreshLocalViews,
-      ),
-      CheckoutScreen(
-        productsRepository: _products,
-        paymentService: _payments,
-        onSaleSaved: _refreshLocalViews,
-      ),
-      InventoryScreen(
-        key: ValueKey<String>('inventory-$_refreshCounter'),
-        repository: _products,
-        onChanged: _refreshLocalViews,
-      ),
-      ReportsScreen(
-        key: ValueKey<String>('reports-$_refreshCounter'),
-        database: widget.database,
-      ),
-    ];
+    // Build tab content only after its first visit. This avoids starting
+    // multiple database reads and loading animations for off-screen tabs.
+    final tabPages = List<Widget>.generate(_titles.length, (index) {
+      if (!_visitedIndices.contains(index)) {
+        return const SizedBox.shrink();
+      }
+      switch (index) {
+        case 0:
+          return _DashboardScreen(
+            key: ValueKey<String>('dashboard-$_refreshCounter'),
+            database: widget.database,
+            onOpenProducts: () => _selectTab(1),
+            onOpenCheckout: () => _selectTab(2),
+            onOpenInventory: () => _selectTab(3),
+            onOpenReports: () => _selectTab(4),
+          );
+        case 1:
+          return ProductScreen(
+            key: ValueKey<String>('products-$_refreshCounter'),
+            repository: _products,
+            onChanged: _refreshLocalViews,
+          );
+        case 2:
+          return CheckoutScreen(
+            productsRepository: _products,
+            paymentService: _payments,
+            onSaleSaved: _refreshLocalViews,
+          );
+        case 3:
+          return InventoryScreen(
+            key: ValueKey<String>('inventory-$_refreshCounter'),
+            repository: _products,
+            onChanged: _refreshLocalViews,
+          );
+        case 4:
+          return ReportsScreen(
+            key: ValueKey<String>('reports-$_refreshCounter'),
+            database: widget.database,
+          );
+        default:
+          return const SizedBox.shrink();
+      }
+    });
+    final pages = List<Widget>.generate(tabPages.length, (index) {
+      if (!_visitedIndices.contains(index)) return tabPages[index];
+      return TickerMode(
+        enabled: index == _selectedIndex,
+        child: tabPages[index],
+      );
+    });
+
 
     return Scaffold(
       appBar: AppBar(
@@ -125,7 +155,7 @@ class _HomeScreenState extends State<HomeScreen> {
       body: IndexedStack(index: _selectedIndex, children: pages),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _selectedIndex,
-        onDestinationSelected: (index) => setState(() => _selectedIndex = index),
+        onDestinationSelected: _selectTab,
         destinations: const <NavigationDestination>[
           NavigationDestination(
             icon: Icon(Icons.home_outlined),
@@ -508,12 +538,12 @@ class _ConfigurationScreenState extends State<_ConfigurationScreen> {
         deviceId: deviceId,
         service: 'pos',
       );
-      final features = await service.getFeatures(tenantId);
+      final features = TenantFeatures.fromEffectiveConfig(config.value);
       if (!mounted) return;
       setState(() {
         _configuration = config.value;
-        _features = features.value;
-        _status = config.fromCache || features.fromCache
+        _features = features;
+        _status = config.fromCache
             ? 'Konfigurasi berasal dari cache lokal.'
             : 'Supabase memberikan respons; validitas sesi dan otorisasi '
                 'perangkat tetap harus diverifikasi.';

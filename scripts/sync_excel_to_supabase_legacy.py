@@ -502,13 +502,18 @@ def _fetch_rows(
     return [dict(item) for item in data]
 
 
-def _assert_subset(label: str, required: Iterable[Any], actual: Iterable[Any]) -> None:
-    required_set = set(required)
+def _assert_exact_inventory(label: str, expected: Iterable[Any], actual: Iterable[Any]) -> None:
+    expected_set = set(expected)
     actual_set = set(actual)
-    missing = required_set - actual_set
-    if missing:
-        sample = sorted(str(value) for value in missing)[:10]
-        raise RuntimeError(f"Post-sync verification failed for {label}; missing={sample}")
+    missing = expected_set - actual_set
+    extra = actual_set - expected_set
+    if missing or extra:
+        missing_sample = sorted(str(value) for value in missing)[:10]
+        extra_sample = sorted(str(value) for value in extra)[:10]
+        raise RuntimeError(
+            f"Post-sync verification failed for {label}; "
+            f"missing={missing_sample}; extra={extra_sample}"
+        )
 
 
 def verify_remote(payloads: WorkbookPayloads, url: str, service_key: str) -> None:
@@ -522,29 +527,29 @@ def verify_remote(payloads: WorkbookPayloads, url: str, service_key: str) -> Non
         service_key=service_key,
     )
 
-    _assert_subset(
+    _assert_exact_inventory(
         "app_config",
         (row["key"] for row in payloads.app_config),
         (row.get("key") for row in app_rows),
     )
-    _assert_subset(
+    _assert_exact_inventory(
         "tenants",
         (row["tenant_id"] for row in payloads.tenants),
         (row.get("tenant_id") for row in tenant_rows),
     )
-    _assert_subset(
+    _assert_exact_inventory(
         "devices",
         (row["device_id"] for row in payloads.devices),
         (row.get("device_id") for row in device_rows),
     )
-    _assert_subset(
+    _assert_exact_inventory(
         "tenant_services",
         ((row["tenant_id"], row["service"]) for row in payloads.services),
         ((row.get("tenant_id"), row.get("service")) for row in service_rows),
     )
 
     print(
-        "VERIFIED workbook-owned rows present: "
+        "VERIFIED exact workbook-owned inventories: "
         f"app_config={len(payloads.app_config)} "
         f"tenants={len(payloads.tenants)} "
         f"services={len(payloads.services)} "

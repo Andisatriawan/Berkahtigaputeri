@@ -3,3 +3,9 @@ include: package:flutter_lints/flutter.yaml
 analyzer:
   exclude:
     - build/**
+
+linter:
+  rules:
+    # Existing UI source composes user-facing labels with '+' in many locations;
+    # keep this stylistic preference non-blocking while the functional checks run.
+    prefer_interpolation_to_compose_strings: false

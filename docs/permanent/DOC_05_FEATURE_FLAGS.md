@@ -1,73 +1,31 @@
-# DOC_05 - FEATURE FLAGS 2 LAYANAN POS + AKUNTANSI
+# DOC_05 — Historical Feature Flags Pilot (Superseded)
 
-Status: **LIVE / P4** — seed UAT dijalankan pada 2026-10-04.
+Status: **HISTORICAL / SUPERSEDED** — this document describes the pre-Final-Pos two-service pilot and is not current runtime authority.
 
-## Contract
-Feature entitlement tenant disimpan di `tenants.features` JSONB:
+## Why this document is retained
 
-```json
-{"pos": true, "akuntansi": false}
-```
+The former contract stored feature entitlements in `tenants.features` and included demo tenants `clientA` / `clientB`. The current canonical architecture supersedes that contract. The document remains to preserve historical context, but its prior "LIVE / P4" status and SQL seed must not be treated as current verification.
 
-Dua boolean canonical:
-- `features.pos`
-- `features.akuntansi`
+## Current Final Pos contract
 
-Admin dan APK harus membaca feature flag tenant sebelum menampilkan/mengaktifkan layanan. Jika `features.akuntansi=false`, menu dan field konfigurasi akuntansi harus disembunyikan atau dinonaktifkan. Feature flag bukan pengganti RLS; write tetap wajib authenticated.
+The authorities are:
 
-## Contoh client LIVE
-### Client A - POS saja
-```json
-{"pos": true, "akuntansi": false}
-```
-APK menampilkan POS dan menyembunyikan menu Akuntansi.
+1. `docs/permanent/DOC_00_CANONICAL_ARCHITECTURE_DECISION.md` — only supported inheritance is `GLOBAL -> TEMPLATE -> TENANT -> SERVICE -> DEVICE`.
+2. `docs/permanent/DOC_02_FINAL_POS_RELATIONAL_OWNERSHIP.sql` — the workbook owns the relational projections and `app_config`; `tenants.features` is a deprecated compatibility projection.
+3. `scripts/sync_excel_to_supabase.py` — validates the canonical workbook's 352-key contract.
 
-POS service config memakai key:
+For Final Pos, application entitlement flags are resolved from canonical `app_config` values through the authorized effective-config path. A client must not read `tenants.features` as its authoritative source or write that compatibility column as the feature setting. Feature-entitlement resolution is separate from effective service configuration: one request must never combine the POS and Akuntansi service configuration rows.
 
-```text
-tenant:clientA:service:pos
-```
+The canonical template rows are the source of template-level feature flags. In the read-only staging check on 2026-10-13, the 100 workbook-owned tenants assigned to BASIC (60), PRO (35), and ENTERPRISE (5) had template feature flags aligned with the presence of their service-config keys; no service/feature mismatch was observed. This is staging evidence, not production certification.
 
-dengan MDR `0.5` persen.
+## Known implementation follow-up
 
-### Client B - POS + Akuntansi
-```json
-{"pos": true, "akuntansi": true}
-```
-Dua layanan aktif. POS memakai key:
+The current `main` revision still has a legacy Admin widget at `btp-admin/feature-flags.js` which directly reads and updates `tenants.features` (lines 4-5). This is a known Admin/runtime-parity defect for the later Phase 3 work. Do not treat that widget as proof of canonical feature-flag behavior. Correct it through a reviewed branch/PR after Phase 2's data-source ownership gate is resolved.
 
-```text
-tenant:clientB:service:pos
-```
+## Historical examples — not canonical
 
-dengan MDR `0.7` persen.
+The old pilot's `clientA` / `clientB` values, MDR examples, and service keys are historical only. Do not seed them into the canonical workbook-managed inventory, and do not manually execute `DOC_05_FEATURE_FLAGS.sql`.
 
-Akuntansi client B memakai:
+## Security invariant
 
-```text
-tenant:clientB:service:akuntansi
-```
-
-## Anti-tabrakan
-Konfigurasi service selalu scoped oleh tenant ID:
-
-- `tenant:clientA:service:pos`
-- `tenant:clientB:service:pos`
-- `tenant:clientB:service:akuntansi`
-
-Perubahan MDR client A tidak mengubah client B. MDR tenant tertentu tidak disimpan pada `global`.
-
-## UI Admin
-`btp-admin/edit.html` memiliki checkbox `POS` dan `AKUNTANSI`.
-
-- AKUNTANSI OFF -> seluruh field scope akuntansi, termasuk akun `2-2010`, dinonaktifkan.
-- AKUNTANSI ON -> field akuntansi aktif kembali.
-- SAVE TENANT menyimpan `tenants.features` bersama metadata tenant.
-
-## Seed verification
-SQL idempotent tersedia di `DOC_05_FEATURE_FLAGS.sql`. State acceptance LIVE:
-
-```text
-clientA -> features.pos=true, features.akuntansi=false, POS MDR=0.5
-clientB -> features.pos=true, features.akuntansi=true, POS MDR=0.7, Akuntansi ON
-```
+A feature flag controls UI availability only; it does not replace authentication, tenant/device ownership checks, or Row-Level Security. Configuration writes must use the documented atomic expected-version RPC.

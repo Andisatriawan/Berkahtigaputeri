@@ -12,6 +12,7 @@ on:
       - "config/FINAL_Production_Excel_A_WebC_Template_100Tenants.xlsx"
       - "scripts/sync_excel_to_supabase.py"
       - "scripts/sync_excel_to_supabase_legacy.py"
+      - "scripts/tests/**"
       - "docs/permanent/DOC_00_CANONICAL_ARCHITECTURE_DECISION.md"
       - ".github/workflows/canonical-workbook-validate.yml"
   push:
@@ -26,6 +27,7 @@ on:
       - "config/FINAL_Production_Excel_A_WebC_Template_100Tenants.xlsx"
       - "scripts/sync_excel_to_supabase.py"
       - "scripts/sync_excel_to_supabase_legacy.py"
+      - "scripts/tests/**"
       - "docs/permanent/DOC_00_CANONICAL_ARCHITECTURE_DECISION.md"
       - ".github/workflows/canonical-workbook-validate.yml"
   workflow_dispatch:
@@ -52,6 +54,12 @@ jobs:
           set -euo pipefail
           python3 -m venv "$RUNNER_TEMP/final-pos-venv"
           "$RUNNER_TEMP/final-pos-venv/bin/python" -m pip install --disable-pip-version-check openpyxl requests
+
+      - name: Run workbook sync inventory regression tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHONPATH=. "$RUNNER_TEMP/final-pos-venv/bin/python" -m unittest discover -s scripts/tests -p 'test_*.py'
 
       - name: Validate canonical workbook without network writes
         shell: bash

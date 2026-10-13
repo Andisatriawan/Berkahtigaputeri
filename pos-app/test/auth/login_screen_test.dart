@@ -10,6 +10,7 @@ void main() {
     final client = SupabaseClient(
       'https://example.supabase.co',
       'test-publishable-key',
+      authOptions: const AuthClientOptions(autoRefreshToken: false),
     );
 
     await tester.pumpWidget(

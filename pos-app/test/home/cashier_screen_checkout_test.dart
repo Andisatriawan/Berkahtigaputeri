@@ -1,13 +1,28 @@
 import 'package:berkahtigaputeri_pos/core/config/app_identity_store.dart';
-import 'package:berkahtigaputeri_pos/features/home/home_screen.dart';
 import 'package:berkahtigaputeri_pos/features/products/models/product.dart';
 import 'package:berkahtigaputeri_pos/features/products/repositories/sqlite_product_repository.dart';
 import 'package:berkahtigaputeri_pos/main.dart';
-import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../helpers/test_database.dart';
+
+Future<void> _settle(WidgetTester tester, String checkpoint) async {
+  debugPrint('PUMP_SETTLE_BEGIN:$checkpoint');
+  await tester.pumpAndSettle(
+    const Duration(milliseconds: 100),
+    EnginePhase.sendSemanticsUpdate,
+    const Duration(seconds: 5),
+  );
+  debugPrint('PUMP_SETTLE_DONE:$checkpoint');
+}
+
+Future<void> _tap(WidgetTester tester, Finder finder, String checkpoint) async {
+  debugPrint('TAP_BEGIN:$checkpoint');
+  await _tap(tester, finder, 'tap-1');
+  debugPrint('TAP_DONE:$checkpoint');
+}
 
 void main() {
   testWidgets(
@@ -45,20 +60,20 @@ void main() {
           identityStore: AppIdentityStore(preferences),
         ),
       );
-      await tester.pumpAndSettle();
+      await _settle(tester, 'initial app');
 
-      await tester.tap(find.text('Lanjutkan sebagai kasir lokal'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Kasir'));
-      await tester.pumpAndSettle();
+      await _tap(tester, find.text('Lanjutkan sebagai kasir lokal'), 'tap-2');
+      await _settle(tester, 'local mode');
+      await _tap(tester, find.text('Kasir'), 'tap-3');
+      await _settle(tester, 'cashier tab');
 
       expect(find.text('Kopi Integrasi'), findsOneWidget);
-      await tester.tap(find.byTooltip('Tambahkan ke keranjang'));
-      await tester.pumpAndSettle();
+      await _tap(tester, find.byTooltip('Tambahkan ke keranjang'), 'tap-4');
+      await _settle(tester, 'add item');
 
       expect(find.text('Selesaikan checkout'), findsOneWidget);
-      await tester.tap(find.text('Selesaikan checkout'));
-      await tester.pumpAndSettle();
+      await _tap(tester, find.text('Selesaikan checkout'), 'tap-5');
+      await _settle(tester, 'checkout');
 
       expect(find.text('Transaksi tersimpan'), findsOneWidget);
       expect(
@@ -85,5 +100,6 @@ void main() {
       expect(outbox.single['status'], isNot('acknowledged'));
       expect(product.stockQty, 2);
     },
+    timeout: const Timeout(Duration(seconds: 60)),
   );
 }

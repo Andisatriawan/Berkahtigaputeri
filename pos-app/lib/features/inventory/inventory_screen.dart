@@ -206,8 +206,6 @@ class _InventoryScreenState extends State<InventoryScreen> {
         date.day.toString().padLeft(2, '0');
   }
 
-  String _money(int amount) => 'Rp ' + amount.toString();
-
   @override
   Widget build(BuildContext context) {
     if (_loading) {
@@ -248,7 +246,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
                       const Text('Tambahkan produk terlebih dahulu.')
                     else
                       DropdownButtonFormField<Product>(
-                        value: _selected,
+                        initialValue: _selected,
                         isExpanded: true,
                         decoration: const InputDecoration(
                           labelText: 'Produk',

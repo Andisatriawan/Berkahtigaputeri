@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:developer' as developer;
 
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -20,6 +19,27 @@ class TenantFeatures {
     );
   }
 
+  /// Extract feature flags from the authenticated, effective app_config result.
+  /// This deliberately avoids the deprecated tenants.features projection.
+  factory TenantFeatures.fromEffectiveConfig(Map<String, dynamic> config) {
+    final rawFeatures = config['features'];
+    if (rawFeatures is Map) {
+      return TenantFeatures.fromJson(Map<String, dynamic>.from(rawFeatures));
+    }
+
+    if (config.containsKey('pos_enabled') ||
+        config.containsKey('akuntansi_enabled')) {
+      return TenantFeatures(
+        pos: config['pos_enabled'] == true,
+        akuntansi: config['akuntansi_enabled'] == true,
+      );
+    }
+
+    throw const FormatException(
+      'Effective app_config does not contain tenant feature flags',
+    );
+  }
+
   Map<String, dynamic> toJson() => <String, dynamic>{
         'pos': pos,
         'akuntansi': akuntansi,
@@ -31,16 +51,6 @@ class EffectiveConfigResult {
   final bool fromCache;
 
   const EffectiveConfigResult({
-    required this.value,
-    required this.fromCache,
-  });
-}
-
-class TenantFeaturesResult {
-  final TenantFeatures value;
-  final bool fromCache;
-
-  const TenantFeaturesResult({
     required this.value,
     required this.fromCache,
   });
@@ -93,99 +103,6 @@ class ConfigService {
         fromCache: true,
       );
     }
-  }
-
-  Future<TenantFeaturesResult> getFeatures(String tenantId) async {
-    final cacheKey = _featuresCacheKey(tenantId);
-
-    try {
-      final features = await _getFeaturesFromAppConfig(tenantId);
-      await _preferences.setString(cacheKey, jsonEncode(features.toJson()));
-      return TenantFeaturesResult(value: features, fromCache: false);
-    } catch (appConfigError) {
-      // DEPRECATED: tenants.features removed, Final Pos uses app_config
-      developer.log(
-        'WARNING: app_config features unavailable for $tenantId; '
-        'falling back to deprecated tenants.features for legacy tenant compatibility.',
-        name: 'ConfigService',
-        error: appConfigError,
-      );
-
-      try {
-        final row = await _client
-            .from('tenants')
-            .select('features')
-            .eq('tenant_id', tenantId)
-            .single();
-        final features = TenantFeatures.fromJson(_asJsonMap(row['features']));
-        await _preferences.setString(cacheKey, jsonEncode(features.toJson()));
-        return TenantFeaturesResult(value: features, fromCache: false);
-      } catch (_) {
-        final cached = _preferences.getString(cacheKey);
-        if (cached == null) rethrow;
-        return TenantFeaturesResult(
-          value: TenantFeatures.fromJson(_asJsonMap(jsonDecode(cached))),
-          fromCache: true,
-        );
-      }
-    }
-  }
-
-  Future<TenantFeatures> _getFeaturesFromAppConfig(String tenantId) async {
-    final tenantKey = 'tenant:$tenantId';
-    final tenantRow = await _client
-        .from('app_config')
-        .select('value')
-        .eq('key', tenantKey)
-        .maybeSingle();
-
-    if (tenantRow == null || tenantRow['value'] == null) {
-      throw StateError('Missing app_config row $tenantKey');
-    }
-
-    final tenantValue = _asJsonMap(tenantRow['value']);
-    final rawTemplate = tenantValue['template_id'] ?? tenantValue['template'];
-    final templateId = rawTemplate?.toString().trim().toUpperCase();
-
-    final orderedKeys = <String>[
-      'global',
-      if (templateId != null && templateId.isNotEmpty) 'template:$templateId',
-      tenantKey,
-    ];
-    final rows = await _client
-        .from('app_config')
-        .select('key,value')
-        .inFilter('key', orderedKeys);
-
-    final valuesByKey = <String, Map<String, dynamic>>{};
-    for (final rawRow in rows) {
-      final row = Map<String, dynamic>.from(rawRow as Map);
-      final key = row['key'] as String?;
-      if (key == null) continue;
-      valuesByKey[key] = _asJsonMap(row['value']);
-    }
-
-    final effective = mergeLayers(
-      orderedKeys.map(
-        (key) => valuesByKey[key] ?? const <String, dynamic>{},
-      ),
-    );
-    final rawFeatures = effective['features'];
-    if (rawFeatures is Map) {
-      return TenantFeatures.fromJson(Map<String, dynamic>.from(rawFeatures));
-    }
-
-    if (effective.containsKey('pos_enabled') ||
-        effective.containsKey('akuntansi_enabled')) {
-      return TenantFeatures(
-        pos: effective['pos_enabled'] == true,
-        akuntansi: effective['akuntansi_enabled'] == true,
-      );
-    }
-
-    throw const FormatException(
-      'Effective app_config does not contain tenant feature flags',
-    );
   }
 
   Future<Map<String, dynamic>> _fallbackSelectAndMerge({
@@ -280,6 +197,4 @@ class ConfigService {
   ) =>
       'p6.effective.$tenantId.$deviceId.$service';
 
-  static String _featuresCacheKey(String tenantId) =>
-      'p6.features.$tenantId';
 }

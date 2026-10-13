@@ -4,7 +4,6 @@ import '../products/models/product.dart';
 import '../products/repositories/sqlite_product_repository.dart';
 import 'cart/sale_calculator.dart';
 import 'checkout/payment_service.dart';
-import 'checkout/sqlite_sale_repository.dart';
 
 /// Cashier UI powered by the modular atomic payment/inventory/accounting layer.
 class CheckoutScreen extends StatefulWidget {
@@ -280,7 +279,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                               ),
                             const Divider(),
                             DropdownButtonFormField<PaymentMethod>(
-                              value: _method,
+                              initialValue: _method,
                               decoration: const InputDecoration(
                                 labelText: 'Metode pembayaran',
                                 border: OutlineInputBorder(),
