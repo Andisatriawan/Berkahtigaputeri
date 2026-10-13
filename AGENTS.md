@@ -65,7 +65,7 @@ For one `(tenant_id, device_id, service)` request, merge only the requested serv
 
 ## Behavioral reference
 
-At the correction-program baseline, `pos-app/lib/core/config/config_service.dart` already resolves TEMPLATE in its local fallback and is the behavioral reference for merge order while Admin/RPC parity is being completed.
+`pos-app/lib/core/config/config_service.dart` must use the authenticated `get_effective_config` RPC as its only remote configuration path. It may cache the returned effective result for the exact `(tenant_id, device_id, service)` tuple, but must not directly SELECT raw GLOBAL/TEMPLATE/TENANT/SERVICE rows. `ConfigService.mergeLayers()` remains the reference for `GLOBAL -> TEMPLATE -> TENANT -> SERVICE -> DEVICE` precedence.
 
 ## Engineering constraints
 

@@ -12,6 +12,8 @@
 --    app_config row. GLOBAL/TEMPLATE/TENANT/SERVICE are NOT directly readable by a device.
 -- 3) effective configuration is returned only through get_effective_config(), which
 --    asserts the canonical 352-key inventory and validates device -> tenant ownership.
+--    Flutter calls this authenticated RPC only; offline fallback may use its exact
+--    tuple-scoped effective-result cache, never direct selects of raw config layers.
 -- 4) canonical super admin is:
 --      email berkahtigaputeri@gmail.com
 --      uid   49abb5d4-8616-45d3-b2cb-8e0dcb72f100

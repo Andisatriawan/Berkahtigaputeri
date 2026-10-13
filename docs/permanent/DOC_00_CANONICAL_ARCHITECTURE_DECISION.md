@@ -102,7 +102,7 @@ POS and Akuntansi service rows must never be merged together when resolving one 
 
 ## Runtime reference implementation
 
-At the baseline commit, `pos-app/lib/core/config/config_service.dart` already implements TEMPLATE resolution in its fallback path and is the behavioral reference for local merge order until all Admin/RPC implementations are unified.
+`pos-app/lib/core/config/config_service.dart` calls the authenticated `get_effective_config` RPC for remote configuration and may use only a previously returned effective-config cache for the exact tenant/device/service tuple during transient offline errors. It must not directly SELECT layered GLOBAL/TEMPLATE/TENANT/SERVICE rows. `ConfigService.mergeLayers()` is the Flutter merge-order reference.
 
 `docs/permanent/DOC_08_RPC_EFFECTIVE_CONFIG.sql` expresses the same Final Pos inheritance order and remains subject to the authentication hardening specified by the correction roadmap.
 

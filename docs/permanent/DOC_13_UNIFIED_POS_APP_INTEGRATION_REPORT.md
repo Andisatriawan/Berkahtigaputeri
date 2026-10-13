@@ -101,3 +101,15 @@ The release workflow source does not prove the required private signing secrets 
 ## Acceptance status
 
 **PARTIAL / NOT VERIFIED.** Source integration work is present on the feature branch, and release identity plus a non-destructive legacy import have been prepared. No successful build/test run, device test, verified certificate match, SaaS cloud synchronization, or production tenant-isolation result is available. Do not publish or describe this branch as a production-ready SaaS release.
+
+
+## Phase 5 tenant-isolation source update — 2026-10-13
+
+This addendum records the Phase 5 implementation work separately from earlier integration claims.
+
+- **SOURCE-VERIFIED:** ConfigService now calls the authenticated `get_effective_config(p_tenant, p_device, p_service)` RPC as its only remote configuration path. It requires an active Supabase session before the request and no longer directly SELECTs raw `app_config` layers. A transient request failure may return only a previously fetched effective result cached for the same tenant/device/service tuple.
+- **SOURCE-VERIFIED:** the Phase 5 migration uses the actual schema contract (`tenants.tenant_id TEXT`, `devices.device_id TEXT`, `app_config(key PRIMARY KEY, value JSONB, updated_at)`), revokes `anon`/`PUBLIC` table grants on protected metadata, and authorizes the RPC only for `authenticated` and server-side `service_role`. It validates device-to-tenant association and authenticated device ownership, asserts the 352-key inventory, and merges only the requested service row.
+- **STAGING-OBSERVED BEFORE REMEDIATION:** the primary staging project `cztlmwzfrhyafgawphgw` had RLS enabled for the four core tables, no direct `anon` table grants, 352 canonical keys, and the expected keyset MD5. The separate staging clone `txwzhesvcjftybrlhnzs` had broad `anon` grants on those tables and did not contain `get_effective_config`; this discrepancy is the target of the migration and test.
+- **NOT YET CERTIFIED BY THIS DOCUMENT:** successful post-migration database test output, 50-tenant concurrent load, production deployment, or installed-APK/runtime verification. These gates must be recorded only after their own evidence exists.
+
+The required alignment statement is: **RLS/auth documentation and APK verification describe the same model**—the APK calls the authenticated effective-config RPC; direct table SELECT is not an alternate resolver. The current change verifies source-model alignment, not an installed APK's runtime behavior.

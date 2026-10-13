@@ -3,9 +3,10 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   group('ConfigService merge order', () {
-    test('GLOBAL <- TENANT <- SERVICE <- DEVICE', () {
+    test('GLOBAL -> TEMPLATE -> TENANT -> SERVICE -> DEVICE', () {
       final merged = ConfigService.mergeLayers(<Map<String, dynamic>>[
         <String, dynamic>{'mdr': 0.1, 'theme': 'global', 'printer': 'none'},
+        <String, dynamic>{'mdr': 0.15, 'theme': 'template'},
         <String, dynamic>{'mdr': 0.2, 'theme': 'tenant'},
         <String, dynamic>{'mdr': 0.5, 'qris_enabled': true},
         <String, dynamic>{'printer': 'PDF Preview'},
