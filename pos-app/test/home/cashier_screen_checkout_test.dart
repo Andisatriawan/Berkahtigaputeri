@@ -20,7 +20,9 @@ Future<void> _settle(WidgetTester tester, String checkpoint) async {
 
 Future<void> _tap(WidgetTester tester, Finder finder, String checkpoint) async {
   debugPrint('TAP_BEGIN:$checkpoint');
-  await _tap(tester, finder, 'tap-1');
+  await tester.ensureVisible(finder);
+  await tester.tap(finder);
+  await tester.pump();
   debugPrint('TAP_DONE:$checkpoint');
 }
 
