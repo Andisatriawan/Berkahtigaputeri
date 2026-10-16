@@ -1,71 +1,24 @@
-# DOCS PERMANENT — FINAL POS ARCHITECTURE AUTHORITY
+# Historical documentation index — personal mirror only
 
-This folder contains the durable architecture, security, schema, operational, and verification record for Berkah POS.
+> **Canonical documentation:** [berkah-pos/Berkahtigaputeri/docs/permanent](https://github.com/berkah-pos/Berkahtigaputeri/tree/main/docs/permanent)  
+> **Canonical agent contract:** [AGENTS.md](https://github.com/berkah-pos/Berkahtigaputeri/blob/main/AGENTS.md)  
+> **Accepted platform/engine/stack decision:** [Owner ADR — Laravel Central API + PostgreSQL 17](https://github.com/berkah-pos/Berkahtigaputeri/blob/main/docs/permanent/ADR-2026-10-16-OWNER-ARCHITECTURE-DECISION.md)  
+> **Current target details and gates:** [DOC_14](https://github.com/berkah-pos/Berkahtigaputeri/blob/main/docs/permanent/DOC_14_KVM2_ISOLATED_TENANT_ARCHITECTURE.md)
 
-## Mandatory read order
+This index belongs to a personal legacy snapshot and is **not the current architecture authority**. The files below remain for historical reference, configuration-contract provenance and migration investigation only. Their Supabase-specific schema, RLS, RPC and operating guidance must not be treated as the accepted future runtime instructions.
 
-1. Root `AGENTS.md` — mandatory preflight, scoped work, and evidence-reporting rules.
-2. `DOC_00_CANONICAL_ARCHITECTURE_DECISION.md` — sole authority for Final Pos configuration inheritance.
-3. `DOC_00_MASTER_ROADMAP.md` — correction phases and acceptance gates in order.
-4. `DOC_12_SAAS_DATABASE_OFFLINE_ARCHITECTURE_AND_AGENT_PROTOCOL.md` — scoped execution and evidence protocol.
-5. `DOC_13_UNIFIED_POS_APP_INTEGRATION_REPORT.md` — implementation evidence and unresolved gates.
-6. `DOC_01_3_LAYER_CONFIG.md` — legacy filename; canonical Final Pos contract.
-7. `DOC_02_SUPABASE_SCHEMA_V1.sql` and `DOC_02_FINAL_POS_RELATIONAL_OWNERSHIP.sql` — schema and workbook ownership.
-8. `DOC_03_RLS_AUTH.sql` and `DOC_03_RLS_AUTH_FIXED.sql` — authenticated tenant-isolation contract.
-9. `DOC_04_ADMIN_ARCHITECTURE.md` — Admin architecture.
-10. `scripts/sync_excel_to_supabase.py` — workbook validator and 352-key inventory.
-11. `DOC_05_FEATURE_FLAGS.md`, `DOC_05_FEATURE_FLAGS.sql` — service/feature configuration.
-12. `DOC_06_AUDIT_VERSIONING.md`, `DOC_06_ATOMIC_VERSIONING_RPC.sql` — atomic version integrity.
-13. `CERTIFICATION_CURRENT_HEAD.md` — scoped Phase 1 canonical source audit; **not** a Phase 7 product/runtime certification.
-14. `DOC_07_FINAL_VERIFICATION_CURRENT_HEAD.md` — historical snapshot dated 2026-10-04; its legacy filename does **not** make it current.
-15. `DOC_07_FINAL_VERIFICATION_HISTORICAL_a19cb3f.md` — historical old 3-layer snapshot; **not current authority**.
-16. `DOC_08_RPC_EFFECTIVE_CONFIG.sql` — authenticated effective-config RPC reference.
-17. `DOC_09_APK_VERIFICATION.md` — APK/config verification and release-surface boundary.
+## Correct status boundary
 
-When any document conflicts with `DOC_00_CANONICAL_ARCHITECTURE_DECISION.md`, the canonical decision wins. Historical reports do not prove current CI, staging, or production status.
+The accepted owner ADR selects Laravel Central API + PostgreSQL 17, but an ADR does not prove implementation or deployment. At the organization main baseline d7ee23cfaada3405416b01d9e127e32b07fb1a38, Flutter was still Supabase-backed and root Composer files were absent. Consult the live organization repository for the latest source, open PRs, exact-SHA CI, staging observations and production acceptance evidence.
 
-## Canonical model
+The five-layer configuration contract remains:
 
 ```text
 GLOBAL → TEMPLATE → TENANT → SERVICE → DEVICE
 ```
 
-Canonical workbook:
+The organization DOC_00 owns the workbook and configuration contract; the merged owner ADR owns platform/engine/stack; canonical DOC_14 is subordinate target detail; the organization master roadmap owns phase numbering. Read those documents in the canonical repository.
 
-`config/FINAL_Production_Excel_A_WebC_Template_100Tenants.xlsx`
+## Preservation rule
 
-Canonical inventory:
-
-```text
-1 global + 3 templates + 100 tenants + 140 services + 108 devices = 352 keys
-```
-
-Canonical key forms:
-
-```text
-global
-template:<TEMPLATE_ID>
-tenant:<tenant_id>
-tenant:<tenant_id>:service:<service>
-device:<device_id>
-```
-
-POS and Akuntansi service rows are service-specific and are not merged together.
-
-## Security boundary
-
-Anonymous direct reads of Final Pos backing tables are not allowed. Anonymous execution of `get_effective_config(...)` is also revoked. Runtime cloud config requires authentication, and normal authenticated callers are scoped by `devices.user_id = auth.uid()` plus device-to-tenant validation.
-
-## Repository operating rule
-
-- Work on branches and merge through review/PR.
-- Do not push Final Pos implementation directly to `main`.
-- Do not restore inheritance that omits TEMPLATE.
-- Do not re-enable anonymous Final Pos table/RPC reads.
-- Keep `btp-admin/` as the published Admin path.
-- Treat `DOC_00_CANONICAL_ARCHITECTURE_DECISION.md` as the architecture authority; use current test/runtime evidence for implementation certification.
-- Keep historical verification clearly labelled historical.
-
-## Live Admin
-
-https://berkah-ajb-dev.github.io/Berkahtigaputeri/btp-admin/
+Legacy Supabase SQL/schema/RLS/RPC, scripts, workbook-validation history and reports are retained as historical/migration inputs. Do not delete them blindly or execute mutation-capable scripts against an unknown/shared resource. Migration, source-of-truth identification and production deployment/acceptance remain **BLOCKED** or **NOT RUN / NOT VERIFIED** until supported by current direct evidence and owner approval.
