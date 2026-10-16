@@ -1,3 +1,5 @@
+> **Historical personal copy:** Use the canonical organization repository for current architecture and implementation instructions: https://github.com/berkah-pos/Berkahtigaputeri. This file is retained with the personal repository history and must not override the organization repository's current documentation/evidence.
+
 # Berkah POS App
 
 **Canonical Flutter client** for Berkah Tiga Puteri POS. The project combines the everyday trial POS screens with the modular local inventory, checkout, accounting, and Supabase configuration layers under `pos-app/`.
