@@ -1,3 +1,5 @@
+> **Historical personal copy:** This local document index is not canonical. For current decisions, runtime status and evidence, use the [organization repository's permanent-document index](https://github.com/berkah-pos/Berkahtigaputeri/blob/main/docs/permanent/README.md) and its [accepted owner ADR](https://github.com/berkah-pos/Berkahtigaputeri/blob/main/docs/permanent/ADR-2026-10-16-OWNER-ARCHITECTURE-DECISION.md). Do not treat older local Supabase-oriented descriptions as active target-runtime authority.
+
 # DOCS PERMANENT — FINAL POS ARCHITECTURE AUTHORITY
 
 This folder contains the durable architecture, security, schema, operational, and verification record for Berkah POS.
