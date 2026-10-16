@@ -1,103 +1,23 @@
-[![Final Pos](https://img.shields.io/badge/Final%20Pos-352%20canonical%20keys-2ea44f)](docs/permanent/DOC_00_CANONICAL_ARCHITECTURE_DECISION.md)
-[![Architecture](https://img.shields.io/badge/config-GLOBAL%E2%86%92TEMPLATE%E2%86%92TENANT%E2%86%92SERVICE%E2%86%92DEVICE-0969da)](docs/permanent/DOC_00_CANONICAL_ARCHITECTURE_DECISION.md)
-[![Supabase RLS](https://img.shields.io/badge/Supabase-RLS%20authenticated-3ecf8e)](docs/permanent/DOC_03_RLS_AUTH.sql)
-[![Atomic Versioning](https://img.shields.io/badge/versioning-atomic%20RPC-8a2be2)](docs/permanent/DOC_06_ATOMIC_VERSIONING_RPC.sql)
+# Berkah POS — Personal Repository Redirect
 
-# Berkahtigaputeri - Final Pos
+> **Canonical repository:** [berkah-pos/Berkahtigaputeri](https://github.com/berkah-pos/Berkahtigaputeri)
+>
+> This personal repository is a legacy snapshot, not the authoritative source for current code, architecture, CI, migration, staging, or release status. Use the organization repository for all active work.
 
-Berkah Tiga Puteri POS is a multi-tenant POS + accounting platform built around one canonical Final Pos configuration model.
+## Current authority and status
 
-## Canonical architecture
+The owner architecture decision was accepted and merged in organization PR [#49](https://github.com/berkah-pos/Berkahtigaputeri/pull/49). It selects a **Laravel Central API on KVM2/Coolify with PostgreSQL 17**, with a central database and separate tenant databases/restricted runtime roles. See the [owner ADR](https://github.com/berkah-pos/Berkahtigaputeri/blob/main/docs/permanent/ADR-2026-10-16-OWNER-ARCHITECTURE-DECISION.md).
 
-Read first:
+An accepted target is not proof of implementation. At organization main baseline d7ee23cfaada3405416b01d9e127e32b07fb1a38, Flutter still uses supabase_flutter and the repository root has no composer.json or composer.lock. Laravel target implementation, migration, production deployment, and production acceptance must not be claimed until verified against current organization source and exact-head evidence.
 
-```text
-docs/permanent/DOC_00_CANONICAL_ARCHITECTURE_DECISION.md
-```
+Start with the [organization README](https://github.com/berkah-pos/Berkahtigaputeri/blob/main/README.md), [agent operating contract](https://github.com/berkah-pos/Berkahtigaputeri/blob/main/AGENTS.md), and [DOC_14 target architecture and acceptance gates](https://github.com/berkah-pos/Berkahtigaputeri/blob/main/docs/permanent/DOC_14_KVM2_ISOLATED_TENANT_ARCHITECTURE.md). Recheck the actual current branch and evidence rather than relying on this dated snapshot.
 
-The only supported configuration inheritance is:
+## Historical material
 
-```text
-GLOBAL -> TEMPLATE -> TENANT -> SERVICE -> DEVICE
-```
+The Supabase SQL, schema/RLS/RPC references, sync script, workbook contract and reports retained in this personal repository are legacy source and migration context. They are **not current instructions to select Supabase as the target runtime**. Do not delete historical artifacts blindly or run mutation-capable scripts against an unknown/shared project.
 
-All Admin, Flutter, Supabase RPC, synchronization, tests and verification documents must implement that same precedence.
+Migration/source-of-truth identification and production deployment/acceptance remain blocked or **NOT RUN / NOT VERIFIED** until the canonical organization repository records direct evidence and owner approval.
 
-## Canonical configuration source
+## Where to make changes
 
-Workbook:
-
-```text
-config/FINAL_Production_Excel_A_WebC_Template_100Tenants.xlsx
-```
-
-Workbook structure and `APP_CONFIG_EXPORT` are validated by:
-
-```text
-scripts/sync_excel_to_supabase.py
-```
-
-Expected canonical inventory:
-
-```text
-1   global
-3   templates
-100 tenants
-140 services
-108 devices
----
-352 app_config keys
-```
-
-Canonical templates:
-
-```text
-BASIC
-PRO
-ENTERPRISE
-```
-
-Supabase configuration shape:
-
-```text
-app_config(key PRIMARY KEY, value JSONB, updated_at)
-```
-
-Canonical key forms:
-
-```text
-global
-template:<TEMPLATE_ID>
-tenant:<tenant_id>
-tenant:<tenant_id>:service:<service>
-device:<device_id>
-```
-
-For one effective-config request, only the requested service row is merged:
-
-```text
-global
--> template:<tenant.template_id>
--> tenant:<tenant_id>
--> tenant:<tenant_id>:service:<service>
--> device:<device_id>
-```
-
-## Final Pos tooling
-
-- Template Admin: https://berkah-ajb-dev.github.io/Berkahtigaputeri/btp-admin/final-pos-template-admin.html
-- Main Admin path: https://berkah-ajb-dev.github.io/Berkahtigaputeri/btp-admin/
-- Sync script: `scripts/sync_excel_to_supabase.py`
-- Sync workflow: `.github/workflows/final-pos-sync.yml`
-- Flutter app: `pos-app/`
-- Permanent architecture/verification docs: `docs/permanent/`
-
-## Engineering rules
-
-- Work through branches and pull requests; do not push implementation changes directly to `main`.
-- Do not restore an inheritance model that omits TEMPLATE.
-- Do not merge POS and Akuntansi service rows into one effective configuration.
-- Do not restore the legacy `app_config(device_id, key, value)` schema.
-- When documentation conflicts with `DOC_00_CANONICAL_ARCHITECTURE_DECISION.md`, the architecture decision is authoritative and the conflicting document must be corrected.
-
-Service rows derived from a template may remain present for audit/export. Template-inherited values remain inherited until an explicit lower-layer override is defined, so a template change can propagate without duplicating the same setting into every tenant.
+Do not originate application, architecture, CI, infrastructure or release changes from this personal mirror. Work from the canonical organization repository on a dedicated branch and submit a reviewed pull request there. This repository is retained for historical reference and redirection only.
