@@ -1,15 +1,20 @@
 # Agent instructions — personal legacy mirror
 
-> **This repository is non-canonical.** Active Berkah POS source, architecture authority, CI evidence and delivery status belong to [berkah-pos/Berkahtigaputeri](https://github.com/berkah-pos/Berkahtigaputeri). Read the [canonical AGENTS.md](https://github.com/berkah-pos/Berkahtigaputeri/blob/main/AGENTS.md) and follow that repository's instructions before doing any active project work.
+> **This repository is non-canonical and historical-only.** Current Berkah POS source, architecture authority, CI evidence and delivery status belong to [berkah-pos/Berkahtigaputeri](https://github.com/berkah-pos/Berkahtigaputeri).
 
-## Required behavior
+## Required canonical reading order
 
-1. Treat this repository's code, SQL, architecture notes, roadmap, and agent rules as a legacy snapshot, not as authority for new implementation.
-2. For any Berkah POS implementation, architecture, database, CI, security, deployment or release task, work from the canonical organization repository on a dedicated branch and reviewed PR. Do not create competing implementation changes here.
-3. Read and follow the merged [owner architecture ADR](https://github.com/berkah-pos/Berkahtigaputeri/blob/main/docs/permanent/ADR-2026-10-16-OWNER-ARCHITECTURE-DECISION.md), canonical [configuration contract](https://github.com/berkah-pos/Berkahtigaputeri/blob/main/docs/permanent/DOC_00_CANONICAL_ARCHITECTURE_DECISION.md), [DOC_14 target architecture](https://github.com/berkah-pos/Berkahtigaputeri/blob/main/docs/permanent/DOC_14_KVM2_ISOLATED_TENANT_ARCHITECTURE.md), and [master roadmap](https://github.com/berkah-pos/Berkahtigaputeri/blob/main/docs/permanent/DOC_00_MASTER_ROADMAP.md) from the organization repository.
-4. The accepted target is Laravel Central API + PostgreSQL 17. **Do not claim it is implemented or deployed from the ADR alone.** At organization main baseline d7ee23cfaada3405416b01d9e127e32b07fb1a38, Flutter remains Supabase-backed and root Composer files are absent; recheck current main before making status claims.
-5. Keep evidence categories separate: implemented on main, accepted ADR target, open-PR-only implementation, CI tied to exact SHA, staging observations, and production deployment/acceptance. Mark missing evidence **NOT RUN / NOT VERIFIED**.
-6. Preserve legacy Supabase schemas, RLS/RPC SQL, migration data/reports and workbook artifacts as historical/migration inputs unless an owner-approved cutover and retention decision says otherwise. The legacy scripts/sync_excel_to_supabase.py contains mutation-capable write paths when cloud credentials are supplied; never treat it as a harmless read-only validator or run it against an unknown/shared resource without explicit approval, verified backup and rollback.
-7. Do not rewrite historical reports to manufacture a pass, delete history blindly, or infer test/deployment success from source presence or another commit's green CI.
+1. [Canonical AGENTS.md](https://github.com/berkah-pos/Berkahtigaputeri/blob/main/AGENTS.md)
+2. [Accepted owner ADR — KVM2, Laravel and PostgreSQL 17](https://github.com/berkah-pos/Berkahtigaputeri/blob/main/docs/permanent/ADR-2026-10-17-OWNER-KVM2-LARAVEL-POSTGRESQL-NO-SUPABASE.md)
+3. [DOC_00 canonical configuration/workbook contract](https://github.com/berkah-pos/Berkahtigaputeri/blob/main/docs/permanent/DOC_00_CANONICAL_ARCHITECTURE_DECISION.md)
+4. [DOC_14 target architecture and acceptance gates](https://github.com/berkah-pos/Berkahtigaputeri/blob/main/docs/permanent/DOC_14_KVM2_ISOLATED_TENANT_ARCHITECTURE.md)
+5. [Master roadmap](https://github.com/berkah-pos/Berkahtigaputeri/blob/main/docs/permanent/DOC_00_MASTER_ROADMAP.md)
+6. [Permanent-document/evidence index](https://github.com/berkah-pos/Berkahtigaputeri/blob/main/docs/permanent/README.md)
 
-This repository's instructions intentionally redirect active work to the organization source of truth. Update the relevant organization docs through that repository's review process; retain this mirror for historical reference.
+For any implementation, architecture, database, CI, security, infrastructure, or release task, work from the canonical organization repository on a dedicated branch and reviewed PR. Do not create competing implementation or architecture changes in this personal mirror.
+
+The accepted owner ADR defines the target; it does not prove implementation or deployment. Verify the current organization branch, exact candidate SHA, relevant CI, and direct staging/production evidence. Keep accepted design, merged source, open-PR-only changes, CI, staging, and production acceptance distinct.
+
+Old code, SQL/RLS/RPC, scripts, workbook artifacts, reports, and history in this mirror are historical/source-migration evidence only, not current architecture authority. Retain history rather than copying legacy decisions into the canonical repository. Do not execute mutation-capable legacy scripts against unknown/shared resources.
+
+Only maintain this personal repository when explicitly tasked with its redirect/history. Never rewrite historical reports to manufacture a pass or infer test/deployment success from source presence.
