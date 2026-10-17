@@ -1,8 +1,11 @@
-# Cursor rules — redirect to canonical Berkah POS repository
+# Cursor rules — canonical repository redirect
 
-- This personal repository is a legacy snapshot, not the active source of truth. For all implementation and architecture work use [berkah-pos/Berkahtigaputeri](https://github.com/berkah-pos/Berkahtigaputeri).
-- Read the canonical [AGENTS.md](https://github.com/berkah-pos/Berkahtigaputeri/blob/main/AGENTS.md), [accepted owner ADR](https://github.com/berkah-pos/Berkahtigaputeri/blob/main/docs/permanent/ADR-2026-10-16-OWNER-ARCHITECTURE-DECISION.md), [DOC_00 configuration contract](https://github.com/berkah-pos/Berkahtigaputeri/blob/main/docs/permanent/DOC_00_CANONICAL_ARCHITECTURE_DECISION.md), [DOC_14 target architecture](https://github.com/berkah-pos/Berkahtigaputeri/blob/main/docs/permanent/DOC_14_KVM2_ISOLATED_TENANT_ARCHITECTURE.md), and [master roadmap](https://github.com/berkah-pos/Berkahtigaputeri/blob/main/docs/permanent/DOC_00_MASTER_ROADMAP.md) from the organization repository before changing code or docs.
-- The accepted target is Laravel Central API + PostgreSQL 17. The ADR is a decision, not implementation proof. At org main baseline d7ee23cfaada3405416b01d9e127e32b07fb1a38, Flutter still initializes Supabase and no root Composer manifest/lockfile exists; verify current org main rather than relying on this snapshot.
-- Do not treat local Supabase SQL/RLS/RPC or the legacy sync script as current target instructions. Preserve them as historical/migration inputs. The sync script is mutation-capable with credentials; never run it against an unknown/shared resource without explicit source approval, verified backup and rollback.
-- For current claims distinguish main source, accepted target, open-PR-only code, exact-SHA CI, staging observations, and production acceptance. Missing evidence is NOT RUN / NOT VERIFIED.
-- Do not originate new app, schema, infrastructure, CI or deployment changes here; use the organization repo, a dedicated branch, and a reviewed PR.
+This personal repository is a historical mirror, not the active source of truth. For all Berkah POS implementation, architecture, database, CI, security, deployment and release work, use [berkah-pos/Berkahtigaputeri](https://github.com/berkah-pos/Berkahtigaputeri).
+
+Before active work, read the canonical [AGENTS.md](https://github.com/berkah-pos/Berkahtigaputeri/blob/main/AGENTS.md), [accepted owner ADR](https://github.com/berkah-pos/Berkahtigaputeri/blob/main/docs/permanent/ADR-2026-10-17-OWNER-KVM2-LARAVEL-POSTGRESQL-NO-SUPABASE.md), [DOC_00 configuration contract](https://github.com/berkah-pos/Berkahtigaputeri/blob/main/docs/permanent/DOC_00_CANONICAL_ARCHITECTURE_DECISION.md), [DOC_14 target architecture and acceptance gates](https://github.com/berkah-pos/Berkahtigaputeri/blob/main/docs/permanent/DOC_14_KVM2_ISOLATED_TENANT_ARCHITECTURE.md), and [master roadmap](https://github.com/berkah-pos/Berkahtigaputeri/blob/main/docs/permanent/DOC_00_MASTER_ROADMAP.md) in the organization repository.
+
+The owner ADR selects the target platform; a decision is not proof of implementation or deployment. Verify current organization `main`, the exact candidate SHA, its relevant CI and direct staging/production evidence rather than relying on dated statements in this mirror.
+
+Old code, SQL/RLS/RPC, workbook artifacts, scripts and reports in this personal mirror are historical/source-migration evidence, not current architecture authority. Preserve them unless an approved retention decision says otherwise. Do not run mutation-capable legacy scripts against unknown/shared resources.
+
+Do not originate application or architecture changes here. Work in the organization repository on a dedicated branch and submit a reviewed PR.
