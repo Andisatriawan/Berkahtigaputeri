@@ -1,3 +1,7 @@
+> **Historical personal copy:** Use the canonical organization repository for current architecture and implementation instructions: https://github.com/berkah-pos/Berkahtigaputeri. This file is retained with the personal repository history and must not override the organization repository's current documentation/evidence.
+>
+> For active work, follow [AGENTS.md](https://github.com/berkah-pos/Berkahtigaputeri/blob/main/AGENTS.md), the [accepted owner ADR](https://github.com/berkah-pos/Berkahtigaputeri/blob/main/docs/permanent/ADR-2026-10-17-OWNER-KVM2-LARAVEL-POSTGRESQL-NO-SUPABASE.md), [DOC_00](https://github.com/berkah-pos/Berkahtigaputeri/blob/main/docs/permanent/DOC_00_CANONICAL_ARCHITECTURE_DECISION.md), [DOC_14](https://github.com/berkah-pos/Berkahtigaputeri/blob/main/docs/permanent/DOC_14_KVM2_ISOLATED_TENANT_ARCHITECTURE.md), and the [master roadmap](https://github.com/berkah-pos/Berkahtigaputeri/blob/main/docs/permanent/DOC_00_MASTER_ROADMAP.md) in the canonical organization repository. Details below describe the legacy personal-mirror snapshot, including prior Supabase-era implementation/build notes; they are historical evidence, not current target-runtime authority. Recheck current organization source and exact-head evidence before acting.
+
 # Berkah POS App
 
 **Canonical Flutter client** for Berkah Tiga Puteri POS. The project combines the everyday trial POS screens with the modular local inventory, checkout, accounting, and Supabase configuration layers under `pos-app/`.
@@ -30,9 +34,9 @@ The unified Android package is set to the existing trial application ID `id.co.b
 
 On startup, the app attempts a one-time, non-destructive import from the existing trial database `berkah_pos.db` into `berkahtigaputeri_pos.db`. The original database file is not deleted. Legacy products enter the current catalogue with stock zero and require explicit tax/data review before checkout. Old stock quantities are stored in a review archive until the owner performs physical stock reconciliation and records proper opening lots/costs. Trial sales and sale lines remain in clearly labeled legacy archive tables because the old schema cannot reliably reconstruct tax, discounts, payment method, FIFO cost layers, or accounting journals. The importer does not fabricate accounting entries. Migration behavior has tests in source, but the suite has not yet run successfully in CI.
 
-## Local checks
+## Local checks — historical snapshot only
 
-Run from this directory:
+These commands describe the personal-mirror checkout. Before using them for active work, read the canonical instructions linked above and confirm the relevant commands against the current organization checkout.
 
 ```sh
 flutter pub get
@@ -40,26 +44,23 @@ flutter analyze
 flutter test
 ```
 
-## Android compile check
+## Android compile check — historical snapshot only
 
-The tracked Android host is intentionally partial. Prepare it locally, if missing, with:
+The tracked Android host in this historical snapshot is intentionally partial. Prepare it locally, if missing, with:
 
 ```sh
 bash tool/prepare_android_host.sh
 flutter build appbundle --debug
 ```
 
-The script fills in only missing Android host files and preserves the existing canonical app Gradle configuration and app identity. Review any generated native files before committing them. The GitHub Actions workflow uses the same script in its disposable checkout, then runs a **debug-only** Android App Bundle compile check. That artifact is not a production-signed release and must not be submitted to Play Console.
+The script fills in only missing Android host files and preserves the existing app identity. Review generated native files before committing them. A debug-only Android App Bundle compile check is not a production-signed release and must not be submitted to Play Console.
 
-For the release workflow, configure these GitHub Actions secrets before producing a publisher-signed cloud build: `BERKAH_UPLOAD_KEYSTORE_BASE64`, `BERKAH_UPLOAD_KEYSTORE_PASSWORD`, `BERKAH_UPLOAD_KEY_ALIAS`, `BERKAH_UPLOAD_KEY_PASSWORD`, `SUPABASE_URL`, and `SUPABASE_PUBLISHABLE_KEY`. A publisher-signed build fails if the cloud endpoint settings are absent; a debug-signed build is explicitly test-only and uses the local-only path. For a local build, copy `android/key.properties.template` to the ignored `android/key.properties` and use the existing compatible signing keystore. Never commit keystores, `key.properties`, or signing secrets. A package ID match does not prove a signing-certificate match.
+Legacy release-build notes below may reference Supabase-era secrets and are retained for historical context only. Do not apply them as the current target architecture or deployment instructions; use the canonical owner ADR and DOC_14 instead.
 
-## Permanent architecture rules
+For the release workflow, the legacy snapshot referenced GitHub Actions secrets `BERKAH_UPLOAD_KEYSTORE_BASE64`, `BERKAH_UPLOAD_KEYSTORE_PASSWORD`, `BERKAH_UPLOAD_KEY_ALIAS`, `BERKAH_UPLOAD_KEY_PASSWORD`, `SUPABASE_URL`, and `SUPABASE_PUBLISHABLE_KEY`. For a local build, it referenced `android/key.properties.template` and an ignored `android/key.properties`. Never commit keystores, `key.properties`, or signing secrets. A package ID match does not prove a signing-certificate match.
 
-Before coding, follow root `AGENTS.md` and read:
+## Current work routing
 
-1. `docs/permanent/DOC_00_CANONICAL_ARCHITECTURE_DECISION.md`
-2. `docs/permanent/DOC_00_MASTER_ROADMAP.md`
-3. `docs/permanent/DOC_12_SAAS_DATABASE_OFFLINE_ARCHITECTURE_AND_AGENT_PROTOCOL.md`
-4. `docs/permanent/DOC_13_UNIFIED_POS_APP_INTEGRATION_REPORT.md`
+For current Flutter architecture, API integration, database, security, build, CI or release work, leave this historical mirror and work in the canonical organization repository on a dedicated branch and reviewed PR. Read [AGENTS.md](https://github.com/berkah-pos/Berkahtigaputeri/blob/main/AGENTS.md), the [accepted owner ADR](https://github.com/berkah-pos/Berkahtigaputeri/blob/main/docs/permanent/ADR-2026-10-17-OWNER-KVM2-LARAVEL-POSTGRESQL-NO-SUPABASE.md), [DOC_00](https://github.com/berkah-pos/Berkahtigaputeri/blob/main/docs/permanent/DOC_00_CANONICAL_ARCHITECTURE_DECISION.md), [DOC_14](https://github.com/berkah-pos/Berkahtigaputeri/blob/main/docs/permanent/DOC_14_KVM2_ISOLATED_TENANT_ARCHITECTURE.md), and the [master roadmap](https://github.com/berkah-pos/Berkahtigaputeri/blob/main/docs/permanent/DOC_00_MASTER_ROADMAP.md) there.
 
-The canonical configuration inheritance remains `GLOBAL → TEMPLATE → TENANT → SERVICE → DEVICE`. All agents must provide evidence reports as defined in DOC_12.
+The old Supabase implementation, SQL, configuration and build notes in this file are preserved as historical/source-migration evidence only. They are not authority to choose or reintroduce Supabase as the target runtime.
